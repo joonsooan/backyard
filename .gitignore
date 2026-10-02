@@ -1,0 +1,22 @@
+# Build
+bin/
+obj/
+publish/
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Transcripts
+*.jsonl
+!tests/fixtures/**/*.jsonl
+
+# Claude
+.claude/
+
+# Docs
+*.md
