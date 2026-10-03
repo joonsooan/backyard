@@ -1,4 +1,7 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Win32;
 
 namespace Backyard;
 
@@ -20,6 +23,10 @@ public static class Program
                     Console.WriteLine("! error");
                 }
                 return 0;
+            case "open":
+                return RunOpen();
+            case "register":
+                return RunRegister();
             case "reset":
                 return RunReset();
             case "disable":
@@ -32,6 +39,61 @@ public static class Program
             default:
                 return RunTui();
         }
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindWindowW(string? className, string windowName);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int cmd);
+
+    private const int SwRestore = 9;
+
+    private static int RunOpen()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var hwnd = FindWindowW(null, Tui.WindowTitle);
+            if (hwnd != IntPtr.Zero)
+            {
+                ShowWindow(hwnd, SwRestore);
+                SetForegroundWindow(hwnd);
+                return 0;
+            }
+        }
+        var exe = Environment.ProcessPath ?? "backyard";
+        try
+        {
+            Process.Start(new ProcessStartInfo("wt")
+            {
+                ArgumentList = { "-w", "new", "--size", $"{TuiText.ResizeWidth},{TuiText.ResizeHeight}", "nt", exe }
+            });
+        }
+        catch (Exception)
+        {
+            Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+        }
+        return 0;
+    }
+
+    private static int RunRegister()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.WriteLine("register is windows-only. on other platforms the statusline link needs no setup if your terminal maps backyard:// yourself.");
+            return 1;
+        }
+        var exe = Environment.ProcessPath ?? "backyard";
+        using var key = Registry.CurrentUser.CreateSubKey(@"Software\Classes\backyard");
+        key.SetValue("", "URL:backyard");
+        key.SetValue("URL Protocol", "");
+        using var cmd = key.CreateSubKey(@"shell\open\command");
+        cmd.SetValue("", $"\"{exe}\" open");
+        Console.WriteLine("registered backyard:// — ctrl+click the statusline growth text to open the farm.");
+        return 0;
     }
 
     private static int RunReset()
@@ -48,6 +110,8 @@ public static class Program
         var dir = Path.GetDirectoryName(Storage.DefaultPath)!;
         if (Directory.Exists(dir))
             Directory.Delete(dir, recursive: true);
+        if (OperatingSystem.IsWindows())
+            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\backyard", throwOnMissingSubKey: false);
         Console.WriteLine($"removed {dir}");
         Console.WriteLine("to finish: remove 'backyard status' from your statusline settings, then delete the backyard binary.");
         return 0;
@@ -68,14 +132,23 @@ public static class Program
     {
         var farm = WithStateLock(() => SyncFarm(DateTimeOffset.Now)).Farm;
         return Tui.Run(farm,
-            save: f => WithStateLock(() =>
+            save: f =>
             {
-                var storage = new Storage(Storage.DefaultPath);
-                var saved = storage.Load() ?? new SavedState();
-                saved.CopyFrom(f);
-                storage.Save(saved);
-                return 0;
-            }),
+                try
+                {
+                    WithStateLock(() =>
+                    {
+                        var storage = new Storage(Storage.DefaultPath);
+                        var saved = storage.Load() ?? new SavedState();
+                        saved.CopyFrom(f);
+                        storage.Save(saved);
+                        return 0;
+                    });
+                }
+                catch (Exception)
+                {
+                }
+            },
             resync: () => WithStateLock(() =>
             {
                 var (storage, saved, synced) = SyncFarm(DateTimeOffset.Now);

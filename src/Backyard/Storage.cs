@@ -70,7 +70,7 @@ public sealed class Storage(string filePath)
     public void Save(SavedState state)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-        var tmp = FilePath + ".tmp";
+        var tmp = $"{FilePath}.{Environment.ProcessId}.tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(state, BackyardJson.Default.SavedState));
         File.Move(tmp, FilePath, overwrite: true);
     }
