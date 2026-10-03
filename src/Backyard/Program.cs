@@ -28,4 +28,5 @@ public static class Program
 public record State(int Coins);
 
 [JsonSerializable(typeof(State))]
+[JsonSerializable(typeof(TranscriptLine))]
 public partial class BackyardJson : JsonSerializerContext;
