@@ -3,39 +3,21 @@ using System.Text.Json.Serialization;
 
 namespace Backyard;
 
-public sealed class SavedState
+public sealed class SavedState : FarmState
 {
-    public int Coins { get; set; }
-    public int Rows { get; set; }
-    public FarmCell?[] Cells { get; set; } = [];
-    public DateTimeOffset FirstRunAt { get; set; }
-    public DateTimeOffset? LastWateredAt { get; set; }
-    public DateTimeOffset? LastEventAt { get; set; }
-    public Dictionary<string, int> HarvestCounts { get; set; } = [];
+    public const int CurrentVersion = 1;
+
+    public SavedState()
+    {
+    }
+
+    public SavedState(DateTimeOffset now) : base(now)
+    {
+    }
+
+    public int Version { get; set; } = CurrentVersion;
     public Dictionary<string, WatcherCursor> WatcherCursors { get; set; } = [];
     public Diagnostics Diag { get; set; } = new();
-
-    public FarmState ToFarmState() => new()
-    {
-        Coins = Coins,
-        Rows = Rows,
-        Cells = Cells,
-        FirstRunAt = FirstRunAt,
-        LastWateredAt = LastWateredAt,
-        LastEventAt = LastEventAt,
-        HarvestCounts = HarvestCounts,
-    };
-
-    public void CopyFrom(FarmState farm)
-    {
-        Coins = farm.Coins;
-        Rows = farm.Rows;
-        Cells = farm.Cells;
-        FirstRunAt = farm.FirstRunAt;
-        LastWateredAt = farm.LastWateredAt;
-        LastEventAt = farm.LastEventAt;
-        HarvestCounts = farm.HarvestCounts;
-    }
 }
 
 public sealed class Diagnostics
@@ -58,12 +40,27 @@ public sealed class Storage(string filePath)
             return null;
         try
         {
-            return JsonSerializer.Deserialize(File.ReadAllText(FilePath), BackyardJson.Default.SavedState);
+            var state = JsonSerializer.Deserialize(File.ReadAllText(FilePath), BackyardJson.Default.SavedState);
+            return state is null ? null : Migrate(state);
         }
         catch (JsonException)
         {
             File.Copy(FilePath, FilePath + ".bak", overwrite: true);
             return null;
+        }
+    }
+
+    private static SavedState Migrate(SavedState state)
+    {
+        switch (state.Version)
+        {
+            case 0:
+                state.Version = 1;
+                goto case 1;
+            case 1:
+                return state;
+            default:
+                throw new JsonException($"state version {state.Version} is newer than supported {SavedState.CurrentVersion}");
         }
     }
 

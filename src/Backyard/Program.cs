@@ -122,15 +122,14 @@ public static class Program
         var now = DateTimeOffset.Now;
         return WithStateLock(() =>
         {
-            var (storage, saved, farm) = SyncFarm(now);
-            storage.Save(saved);
+            var farm = SyncFarm(now);
             return StatusLine.Compose(farm, now, color: true);
         });
     }
 
     private static int RunTui()
     {
-        var farm = WithStateLock(() => SyncFarm(DateTimeOffset.Now)).Farm;
+        var farm = WithStateLock(() => SyncFarm(DateTimeOffset.Now));
         return Tui.Run(farm,
             save: f =>
             {
@@ -139,8 +138,12 @@ public static class Program
                     WithStateLock(() =>
                     {
                         var storage = new Storage(Storage.DefaultPath);
-                        var saved = storage.Load() ?? new SavedState();
-                        saved.CopyFrom(f);
+                        var saved = (SavedState)f;
+                        if (storage.Load() is { } onDisk)
+                        {
+                            saved.WatcherCursors = onDisk.WatcherCursors;
+                            saved.Diag = onDisk.Diag;
+                        }
                         storage.Save(saved);
                         return 0;
                     });
@@ -149,12 +152,7 @@ public static class Program
                 {
                 }
             },
-            resync: () => WithStateLock(() =>
-            {
-                var (storage, saved, synced) = SyncFarm(DateTimeOffset.Now);
-                storage.Save(saved);
-                return synced;
-            }));
+            resync: () => WithStateLock(() => (FarmState)SyncFarm(DateTimeOffset.Now)));
     }
 
     private static T WithStateLock<T>(Func<T> action)
@@ -180,14 +178,13 @@ public static class Program
         }
     }
 
-    private static (Storage Storage, SavedState Saved, FarmState Farm) SyncFarm(DateTimeOffset now)
+    private static SavedState SyncFarm(DateTimeOffset now)
     {
         if (int.TryParse(Environment.GetEnvironmentVariable("BACKYARD_SPEED"), out var speed) && speed >= 1)
             Balance.Speed = speed;
 
         var storage = new Storage(Storage.DefaultPath);
-        var saved = storage.Load() ?? new SavedState();
-        var farm = saved.FirstRunAt == default ? FarmState.CreateNew(now) : saved.ToFarmState();
+        var saved = storage.Load() is { } loaded && loaded.FirstRunAt != default ? loaded : new SavedState(now);
 
         var watcher = new Watcher(saved.WatcherCursors);
         var events = new List<WatchEvent>();
@@ -196,13 +193,13 @@ public static class Program
         if (Directory.Exists(projectsRoot))
             events = watcher.Scan(projectsRoot);
 
-        farm.Apply(events, now);
+        saved.Apply(events, now);
 
-        saved.CopyFrom(farm);
         saved.Diag.ParseErrors += watcher.ParseErrorCount;
         saved.Diag.UnknownLines += watcher.UnknownLineCount;
         if (events.Count > 0)
             saved.Diag.LastDetectedAt = watcher.LastEventTimestamp;
-        return (storage, saved, farm);
+        storage.Save(saved);
+        return saved;
     }
 }

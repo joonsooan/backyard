@@ -6,7 +6,7 @@ public static class StatusLine
     {
         if (cell is null)
             return '_';
-        var maxStage = Balance.Crops[cell.Crop].MaxStage;
+        var maxStage = cell.Info.MaxStage;
         return ". , v Y"[2 * (cell.Stage * 3 / maxStage)];
     }
 
@@ -49,17 +49,17 @@ public static class StatusLine
 
     private static string? GrowthSegment(FarmState farm, DateTimeOffset now, bool color)
     {
-        var planted = farm.Cells.OfType<FarmCell>().ToArray();
+        var planted = farm.Planted.ToArray();
         if (planted.Length == 0)
             return null;
-        if (planted.Any(c => c.Stage >= Balance.Crops[c.Crop].MaxStage))
+        if (planted.Any(c => c.IsRipe))
             return color ? Link($"{Cyan}harvest!{Reset}") : "harvest!";
         var growing = planted
-            .Where(c => c.Watered && c.Stage < Balance.Crops[c.Crop].MaxStage)
+            .Where(c => c.IsGrowing)
             .ToArray();
         if (growing.Length > 0)
         {
-            var next = growing.Min(c => c.StageStartedAt) + Balance.StageDuration;
+            var next = growing.Min(c => c.NextStageAt);
             var minutes = Math.Max(1, (int)Math.Ceiling((next - now).TotalMinutes));
             return color ? Link($"{Green}~ {minutes}m{Reset}") : $"~ {minutes}m";
         }

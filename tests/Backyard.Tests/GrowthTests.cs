@@ -12,7 +12,7 @@ public class GrowthTests
     [Fact]
     public void CreateNew_StartsWithTenCoinsOneRowAndFreeCarrot()
     {
-        var state = FarmState.CreateNew(T0);
+        var state = new FarmState(T0);
 
         Assert.Equal(10, state.Coins);
         Assert.Equal(1, state.Rows);
@@ -26,7 +26,7 @@ public class GrowthTests
     [Fact]
     public void Stage_RisesAfterTenMinutesWithWater()
     {
-        var state = FarmState.CreateNew(T0);
+        var state = new FarmState(T0);
 
         state.Apply([EventAt(1)], At(15));
 
@@ -37,7 +37,7 @@ public class GrowthTests
     [Fact]
     public void Stage_WaitsWithWaterUntilTenMinutesPass()
     {
-        var state = FarmState.CreateNew(T0);
+        var state = new FarmState(T0);
 
         state.Apply([EventAt(1)], At(5));
 
@@ -48,7 +48,7 @@ public class GrowthTests
     [Fact]
     public void Stage_WaitsWithoutWaterEvenAfterDays()
     {
-        var state = FarmState.CreateNew(T0);
+        var state = new FarmState(T0);
 
         state.Apply([], T0 + TimeSpan.FromDays(5));
 
@@ -59,7 +59,7 @@ public class GrowthTests
     [Fact]
     public void Water_IsIgnoredWhenStageAlreadyWatered()
     {
-        var state = FarmState.CreateNew(T0);
+        var state = new FarmState(T0);
 
         state.Apply([EventAt(1), EventAt(2), EventAt(3)], At(5));
 
@@ -71,7 +71,7 @@ public class GrowthTests
     [Fact]
     public void OfflineReplay_ThreeEventsRaisePotatoToReady()
     {
-        var state = FarmState.CreateNew(T0);
+        var state = new FarmState(T0);
         state.Cells[0] = null;
         Assert.True(state.TryPlant(1, "potato", T0));
         var coinsAfterPlanting = state.Coins;
@@ -86,15 +86,16 @@ public class GrowthTests
     [Fact]
     public void ReadyCrop_StaysUntilManualHarvest()
     {
-        var state = FarmState.CreateNew(T0);
+        var state = new FarmState(T0);
 
         state.Apply([EventAt(0), EventAt(15), EventAt(40)], At(60));
 
         Assert.Equal(2, state.Cells[0]!.Stage);
         Assert.Equal(10, state.Coins);
 
-        Assert.True(state.TryHarvest(0));
+        Assert.True(state.TryHarvest(0, At(60)));
         Assert.Equal(1, state.HarvestCounts["carrot"]);
+        Assert.Equal(At(60), state.FirstHarvestAt["carrot"]);
         Assert.Equal(10 + 4, state.Coins);
         Assert.Null(state.Cells[0]);
     }
@@ -102,7 +103,7 @@ public class GrowthTests
     [Fact]
     public void Events_BeforeFirstRun_AreIgnored()
     {
-        var state = FarmState.CreateNew(At(10));
+        var state = new FarmState(At(10));
 
         state.Apply([EventAt(5)], At(15));
 
@@ -113,19 +114,21 @@ public class GrowthTests
     [Fact]
     public void TryPlant_FailsOnOccupiedCellAndWithoutCoins()
     {
-        var state = FarmState.CreateNew(T0);
+        var state = new FarmState(T0);
 
         Assert.False(state.TryPlant(0, "carrot", T0));
         Assert.True(state.TryPlant(1, "potato", T0));
-        Assert.True(state.TryPlant(2, "potato", T0));
-        Assert.False(state.TryPlant(3, "potato", T0));
+        Assert.True(state.TryPlant(2, "carrot", T0));
+        Assert.True(state.TryPlant(3, "carrot", T0));
+        Assert.False(state.TryPlant(4, "carrot", T0));
+        Assert.False(state.TryPlant(4, "unknown", T0));
         Assert.Equal(0, state.Coins);
     }
 
     [Fact]
     public void TryExpand_ChargesRowPricesAndStopsAtTenRows()
     {
-        var state = FarmState.CreateNew(T0);
+        var state = new FarmState(T0);
         state.Coins = 200;
 
         Assert.True(state.TryExpand());
@@ -154,7 +157,7 @@ public class GrowthTests
     [Fact]
     public void TryExpand_FailsWithoutCoins()
     {
-        var state = FarmState.CreateNew(T0);
+        var state = new FarmState(T0);
 
         Assert.False(state.TryExpand());
         Assert.Equal(1, state.Rows);
@@ -164,16 +167,16 @@ public class GrowthTests
     [Fact]
     public void TryHarvest_FailsOnGrowingOrEmptyCell()
     {
-        var state = FarmState.CreateNew(T0);
+        var state = new FarmState(T0);
 
-        Assert.False(state.TryHarvest(0));
-        Assert.False(state.TryHarvest(5));
+        Assert.False(state.TryHarvest(0, T0));
+        Assert.False(state.TryHarvest(5, T0));
     }
 
     [Fact]
     public void FullField_HasNoRoomToPlant()
     {
-        var state = FarmState.CreateNew(T0);
+        var state = new FarmState(T0);
         state.Coins = 100;
         for (var i = 1; i < state.Cells.Length; i++)
             Assert.True(state.TryPlant(i, "carrot", T0));

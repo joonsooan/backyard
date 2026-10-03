@@ -1,30 +1,6 @@
+using System.Text.Json.Serialization;
+
 namespace Backyard;
-
-public static class Balance
-{
-    public static int Speed = 1;
-    public static TimeSpan StageDuration => TimeSpan.FromMinutes(10.0 / Speed);
-    public const int Columns = 10;
-    public const int MaxRows = 10;
-    public const int StartCoins = 10;
-    public const int SecondRowPrice = 50;
-    public const int ThirdRowPrice = 150;
-
-    public static int NextRowPrice(int currentRows) => currentRows switch
-    {
-        1 => SecondRowPrice,
-        2 => ThirdRowPrice,
-        _ => ThirdRowPrice << (currentRows - 2)
-    };
-
-    public static readonly IReadOnlyDictionary<string, CropInfo> Crops = new Dictionary<string, CropInfo>
-    {
-        ["carrot"] = new CropInfo(MaxStage: 2, SeedPrice: 2, SellPrice: 4),
-        ["potato"] = new CropInfo(MaxStage: 3, SeedPrice: 5, SellPrice: 10),
-    };
-}
-
-public sealed record CropInfo(int MaxStage, int SeedPrice, int SellPrice);
 
 public sealed class FarmCell
 {
@@ -32,9 +8,24 @@ public sealed class FarmCell
     public int Stage { get; set; }
     public bool Watered { get; set; }
     public DateTimeOffset StageStartedAt { get; set; }
+
+    [JsonIgnore] public CropInfo Info => Balance.CropOrFallback(Crop);
+    [JsonIgnore] public bool IsRipe => Stage >= Info.MaxStage;
+    [JsonIgnore] public bool IsGrowing => Watered && !IsRipe;
+    [JsonIgnore] public DateTimeOffset NextStageAt => StageStartedAt + Balance.StageDuration;
+
+    public double Progress(DateTimeOffset now) =>
+        IsRipe ? 1 : Math.Clamp((now - StageStartedAt) / Balance.StageDuration, 0, 1);
+
+    public void AdvanceStage(DateTimeOffset at)
+    {
+        Stage++;
+        Watered = false;
+        StageStartedAt = at;
+    }
 }
 
-public sealed class FarmState
+public class FarmState
 {
     public int Coins { get; set; }
     public int Rows { get; set; }
@@ -43,19 +34,22 @@ public sealed class FarmState
     public DateTimeOffset? LastWateredAt { get; set; }
     public DateTimeOffset? LastEventAt { get; set; }
     public Dictionary<string, int> HarvestCounts { get; set; } = [];
+    public Dictionary<string, DateTimeOffset> FirstHarvestAt { get; set; } = [];
 
-    public static FarmState CreateNew(DateTimeOffset now)
+    public FarmState()
     {
-        var state = new FarmState
-        {
-            Coins = Balance.StartCoins,
-            Rows = 1,
-            Cells = new FarmCell?[Balance.Columns],
-            FirstRunAt = now,
-        };
-        state.Cells[0] = new FarmCell { Crop = "carrot", Stage = 0, Watered = false, StageStartedAt = now };
-        return state;
     }
+
+    public FarmState(DateTimeOffset now)
+    {
+        Coins = Balance.StartCoins;
+        Rows = 1;
+        Cells = new FarmCell?[Balance.Columns];
+        FirstRunAt = now;
+        Cells[0] = new FarmCell { Crop = Balance.Crops[0].Name, Stage = 0, Watered = false, StageStartedAt = now };
+    }
+
+    [JsonIgnore] public IEnumerable<FarmCell> Planted => Cells.OfType<FarmCell>();
 
     public void Apply(IEnumerable<WatchEvent> events, DateTimeOffset now)
     {
@@ -72,29 +66,22 @@ public sealed class FarmState
 
     public void Settle(DateTimeOffset now)
     {
-        for (var i = 0; i < Cells.Length; i++)
+        foreach (var cell in Planted)
         {
-            var cell = Cells[i];
-            if (cell is null)
-                continue;
-            var crop = Balance.Crops[cell.Crop];
-            if (cell.Watered && cell.Stage < crop.MaxStage && cell.StageStartedAt + Balance.StageDuration <= now)
-                AdvanceStage(cell, cell.StageStartedAt + Balance.StageDuration);
+            if (cell.IsGrowing && cell.NextStageAt <= now)
+                cell.AdvanceStage(cell.NextStageAt);
         }
     }
 
     private void WaterReadyCells(DateTimeOffset at)
     {
         var wateredAny = false;
-        foreach (var cell in Cells)
+        foreach (var cell in Planted)
         {
-            if (cell is null || cell.Watered)
+            if (cell.Watered || cell.IsRipe)
                 continue;
-            var crop = Balance.Crops[cell.Crop];
-            if (cell.Stage >= crop.MaxStage)
-                continue;
-            if (cell.StageStartedAt + Balance.StageDuration <= at)
-                AdvanceStage(cell, at);
+            if (cell.NextStageAt <= at)
+                cell.AdvanceStage(at);
             else
                 cell.Watered = true;
             wateredAny = true;
@@ -103,33 +90,25 @@ public sealed class FarmState
             LastWateredAt = at;
     }
 
-    private static void AdvanceStage(FarmCell cell, DateTimeOffset at)
-    {
-        cell.Stage++;
-        cell.Watered = false;
-        cell.StageStartedAt = at;
-    }
-
     public bool TryPlant(int index, string cropName, DateTimeOffset now)
     {
         if (index < 0 || index >= Cells.Length || Cells[index] is not null)
             return false;
-        if (!Balance.Crops.TryGetValue(cropName, out var crop) || Coins < crop.SeedPrice)
+        var crop = Balance.Crop(cropName);
+        if (crop is null || crop.Retired || Coins < crop.SeedPrice)
             return false;
         Coins -= crop.SeedPrice;
         Cells[index] = new FarmCell { Crop = cropName, Stage = 0, Watered = false, StageStartedAt = now };
         return true;
     }
 
-    public bool TryHarvest(int index)
+    public bool TryHarvest(int index, DateTimeOffset now)
     {
-        if (index < 0 || index >= Cells.Length || Cells[index] is not { } cell)
+        if (index < 0 || index >= Cells.Length || Cells[index] is not { IsRipe: true } cell)
             return false;
-        var crop = Balance.Crops[cell.Crop];
-        if (cell.Stage < crop.MaxStage)
-            return false;
-        Coins += crop.SellPrice;
+        Coins += cell.Info.SellPrice;
         HarvestCounts[cell.Crop] = HarvestCounts.GetValueOrDefault(cell.Crop) + 1;
+        FirstHarvestAt.TryAdd(cell.Crop, now);
         Cells[index] = null;
         return true;
     }
