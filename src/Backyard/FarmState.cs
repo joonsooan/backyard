@@ -2,7 +2,10 @@ namespace Backyard;
 
 public static class Balance
 {
-    public static readonly TimeSpan StageDuration = TimeSpan.FromMinutes(10);
+    public static int Speed = 1;
+    public static TimeSpan StageDuration => TimeSpan.FromMinutes(10.0 / Speed);
+    public static TimeSpan StatusTimeout => TimeSpan.FromMinutes(30.0 / Speed);
+    public static TimeSpan WaterAfterglow => TimeSpan.FromMinutes(10.0 / Speed);
     public const int Columns = 10;
     public const int MaxRows = 10;
     public const int StartCoins = 10;
@@ -31,6 +34,65 @@ public sealed class FarmCell
     public int Stage { get; set; }
     public bool Watered { get; set; }
     public DateTimeOffset StageStartedAt { get; set; }
+}
+
+public static class StatusLine
+{
+    public static char Glyph(FarmCell? cell)
+    {
+        if (cell is null)
+            return '_';
+        var maxStage = Balance.Crops[cell.Crop].MaxStage;
+        return ". , v Y"[2 * (cell.Stage * 3 / maxStage)];
+    }
+
+    private const string Dim = "\x1b[90m";
+    private const string Green = "\x1b[32m";
+    private const string Gold = "\x1b[93m";
+    private const string Reset = "\x1b[0m";
+
+    private static string Paint(char glyph, bool color) => !color ? glyph.ToString() : glyph switch
+    {
+        '_' => $"{Dim}_{Reset}",
+        'Y' => $"{Gold}Y{Reset}",
+        _ => $"{Green}{glyph}{Reset}",
+    };
+
+    public static string FieldSegment(FarmCell?[] cells, int rows, bool color = false)
+    {
+        if (rows == 1)
+            return "[" + string.Join(' ', cells.Select(c => Paint(Glyph(c), color))) + "]";
+        var counts = cells.GroupBy(Glyph).ToDictionary(g => g.Key, g => g.Count());
+        return string.Join(' ', "Yv,._"
+            .Where(counts.ContainsKey)
+            .Select(g => $"{Paint(g, color)}:{counts[g]}"));
+    }
+
+    public static string Compose(FarmState farm, DateTimeOffset now, bool color = false)
+    {
+        var coins = color ? $"{Gold}{farm.Coins}G{Reset}" : $"{farm.Coins}G";
+        var line = $"{FieldSegment(farm.Cells, farm.Rows, color)} │ {coins}";
+        return GrowthSegment(farm, now, color) is { } growth ? $"{line} │ {growth}" : line;
+    }
+
+    private static string? GrowthSegment(FarmState farm, DateTimeOffset now, bool color)
+    {
+        var planted = farm.Cells.OfType<FarmCell>().ToArray();
+        if (planted.Length == 0)
+            return null;
+        var growing = planted
+            .Where(c => c.Watered && c.Stage < Balance.Crops[c.Crop].MaxStage)
+            .ToArray();
+        if (growing.Length > 0)
+        {
+            var next = growing.Min(c => c.StageStartedAt) + Balance.StageDuration;
+            var minutes = Math.Max(1, (int)Math.Ceiling((next - now).TotalMinutes));
+            return color ? $"{Green}~ {minutes}m{Reset}" : $"~ {minutes}m";
+        }
+        if (planted.All(c => c.Stage >= Balance.Crops[c.Crop].MaxStage))
+            return color ? $"{Gold}Y!{Reset}" : "Y!";
+        return color ? $"{Dim}dry{Reset}" : "dry";
+    }
 }
 
 public sealed class FarmState

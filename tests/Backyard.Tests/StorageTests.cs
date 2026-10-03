@@ -1,5 +1,3 @@
-using Backyard;
-
 namespace Backyard.Tests;
 
 public sealed class StorageTests : IDisposable
@@ -39,7 +37,7 @@ public sealed class StorageTests : IDisposable
             LastWateredAt = now.AddMinutes(5),
             LastEventAt = now.AddMinutes(7),
             HarvestCounts = { ["carrot"] = 3 },
-            WatcherOffsets = { ["session-a"] = 1234L },
+            WatcherCursors = { ["session-a"] = new WatcherCursor { Offset = 1234, TurnId = "turn-1", SessionId = "session-a", ToolCounts = { ["Read"] = 2 } } },
             Diag = { ParseErrors = 1, UnknownLines = 2, LastDetectedAt = now.AddMinutes(7) },
         };
         saved.Cells[1] = new FarmCell { Crop = "potato", Stage = 2, Watered = true, StageStartedAt = now };
@@ -60,7 +58,9 @@ public sealed class StorageTests : IDisposable
         Assert.Equal(now.AddMinutes(5), loaded.LastWateredAt);
         Assert.Equal(now.AddMinutes(7), loaded.LastEventAt);
         Assert.Equal(3, loaded.HarvestCounts["carrot"]);
-        Assert.Equal(1234L, loaded.WatcherOffsets["session-a"]);
+        Assert.Equal(1234L, loaded.WatcherCursors["session-a"].Offset);
+        Assert.Equal("turn-1", loaded.WatcherCursors["session-a"].TurnId);
+        Assert.Equal(2, loaded.WatcherCursors["session-a"].ToolCounts["Read"]);
         Assert.Equal(1, loaded.Diag.ParseErrors);
         Assert.Equal(2, loaded.Diag.UnknownLines);
         Assert.Equal(now.AddMinutes(7), loaded.Diag.LastDetectedAt);

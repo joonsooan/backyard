@@ -12,8 +12,30 @@ public sealed class SavedState
     public DateTimeOffset? LastWateredAt { get; set; }
     public DateTimeOffset? LastEventAt { get; set; }
     public Dictionary<string, int> HarvestCounts { get; set; } = [];
-    public Dictionary<string, long> WatcherOffsets { get; set; } = [];
+    public Dictionary<string, WatcherCursor> WatcherCursors { get; set; } = [];
     public Diagnostics Diag { get; set; } = new();
+
+    public FarmState ToFarmState() => new()
+    {
+        Coins = Coins,
+        Rows = Rows,
+        Cells = Cells,
+        FirstRunAt = FirstRunAt,
+        LastWateredAt = LastWateredAt,
+        LastEventAt = LastEventAt,
+        HarvestCounts = HarvestCounts,
+    };
+
+    public void CopyFrom(FarmState farm)
+    {
+        Coins = farm.Coins;
+        Rows = farm.Rows;
+        Cells = farm.Cells;
+        FirstRunAt = farm.FirstRunAt;
+        LastWateredAt = farm.LastWateredAt;
+        LastEventAt = farm.LastEventAt;
+        HarvestCounts = farm.HarvestCounts;
+    }
 }
 
 public sealed class Diagnostics

@@ -4,6 +4,10 @@ using System.Text.Json.Serialization;
 
 namespace Backyard;
 
+public enum AgentSignalKind { Working, Waiting }
+
+public sealed record AgentSignal(AgentSignalKind Kind, DateTimeOffset Timestamp);
+
 public sealed record WatchEvent(
     string SessionId,
     string TurnId,
@@ -26,7 +30,15 @@ public sealed class TranscriptMessage
     [JsonPropertyName("content")] public JsonElement Content { get; set; }
 }
 
-public sealed class Watcher
+public sealed class WatcherCursor
+{
+    public long Offset { get; set; }
+    public string? TurnId { get; set; }
+    public string? SessionId { get; set; }
+    public Dictionary<string, int> ToolCounts { get; set; } = new();
+}
+
+public sealed class Watcher(Dictionary<string, WatcherCursor>? cursors = null)
 {
     private static readonly string[] KnownIgnoredTypes =
     [
@@ -34,25 +46,29 @@ public sealed class Watcher
         "file-history-snapshot", "file-history-delta", "queue-operation"
     ];
 
-    private sealed class FileCursor
-    {
-        public long Offset;
-        public string? TurnId;
-        public string? SessionId;
-        public Dictionary<string, int> ToolCounts = new();
-    }
-
-    private readonly Dictionary<string, FileCursor> _cursors = new();
+    private readonly Dictionary<string, WatcherCursor> _cursors = cursors ?? new();
     private readonly HashSet<string> _seenTurns = new();
 
     public int ParseErrorCount { get; private set; }
+    public int UnknownLineCount { get; private set; }
     public DateTimeOffset? LastEventTimestamp { get; private set; }
+    public AgentSignal? LatestSignal { get; private set; }
 
-    public List<WatchEvent> Scan(string projectDirectory)
+    public List<WatchEvent> Scan(string projectsRoot)
     {
         var events = new List<WatchEvent>();
-        foreach (var path in Directory.EnumerateFiles(projectDirectory, "*.jsonl", SearchOption.TopDirectoryOnly))
-            ReadFile(path, events);
+        var seen = new HashSet<string>();
+        if (Directory.Exists(projectsRoot))
+        {
+            foreach (var projectDir in Directory.EnumerateDirectories(projectsRoot))
+                foreach (var path in Directory.EnumerateFiles(projectDir, "*.jsonl", SearchOption.TopDirectoryOnly))
+                {
+                    seen.Add(Path.GetFileNameWithoutExtension(path));
+                    ReadFile(path, events);
+                }
+        }
+        foreach (var key in _cursors.Keys.Where(k => !seen.Contains(k)).ToList())
+            _cursors.Remove(key);
         return events;
     }
 
@@ -65,8 +81,9 @@ public sealed class Watcher
 
     private void ReadFile(string path, List<WatchEvent> events)
     {
-        if (!_cursors.TryGetValue(path, out var cursor))
-            _cursors[path] = cursor = new FileCursor();
+        var sessionKey = Path.GetFileNameWithoutExtension(path);
+        if (!_cursors.TryGetValue(sessionKey, out var cursor))
+            _cursors[sessionKey] = cursor = new WatcherCursor();
 
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         if (stream.Length < cursor.Offset)
@@ -96,7 +113,7 @@ public sealed class Watcher
         cursor.Offset += consumable;
     }
 
-    private void ProcessLine(string line, FileCursor cursor, List<WatchEvent> events)
+    private void ProcessLine(string line, WatcherCursor cursor, List<WatchEvent> events)
     {
         TranscriptLine? record;
         try
@@ -116,6 +133,8 @@ public sealed class Watcher
         if (record.IsSidechain == true)
             return;
 
+        TrackSignal(record);
+
         switch (record.Type)
         {
             case "user" when record.PromptId is not null && StartsTurn(record.Message):
@@ -134,9 +153,22 @@ public sealed class Watcher
                 break;
             default:
                 if (!KnownIgnoredTypes.Contains(record.Type))
-                    ParseErrorCount++;
+                    UnknownLineCount++;
                 break;
         }
+    }
+
+    private void TrackSignal(TranscriptLine record)
+    {
+        var isTurnEnd = record.Type == "system" && record.Subtype == "turn_duration";
+        if (!isTurnEnd && record.Type is not ("user" or "assistant"))
+            return;
+        if (!DateTimeOffset.TryParse(record.Timestamp, null, System.Globalization.DateTimeStyles.RoundtripKind, out var timestamp))
+            return;
+        if (LatestSignal is not null && timestamp < LatestSignal.Timestamp)
+            return;
+        var kind = isTurnEnd ? AgentSignalKind.Waiting : AgentSignalKind.Working;
+        LatestSignal = new AgentSignal(kind, timestamp);
     }
 
     private static bool StartsTurn(TranscriptMessage? message)
@@ -166,7 +198,7 @@ public sealed class Watcher
         }
     }
 
-    private void EndTurn(TranscriptLine record, FileCursor cursor, List<WatchEvent> events)
+    private void EndTurn(TranscriptLine record, WatcherCursor cursor, List<WatchEvent> events)
     {
         var turnId = cursor.TurnId;
         var sessionId = cursor.SessionId ?? record.SessionId;
