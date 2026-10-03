@@ -73,7 +73,18 @@ public sealed class Storage(string filePath)
     }
 }
 
+public sealed class ClaudeSettings
+{
+    [JsonPropertyName("statusLine")] public ClaudeStatusLine? StatusLine { get; set; }
+}
+
+public sealed class ClaudeStatusLine
+{
+    [JsonPropertyName("command")] public string? Command { get; set; }
+}
+
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(SavedState))]
 [JsonSerializable(typeof(TranscriptLine))]
+[JsonSerializable(typeof(ClaudeSettings))]
 public partial class BackyardJson : JsonSerializerContext;

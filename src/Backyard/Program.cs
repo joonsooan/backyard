@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Win32;
+using Spectre.Console;
 
 namespace Backyard;
 
@@ -36,6 +38,8 @@ public static class Program
                 return 0;
             case "uninstall":
                 return RunUninstall();
+            case "doctor":
+                return RunDoctor();
             default:
                 return RunTui();
         }
@@ -117,6 +121,68 @@ public static class Program
         return 0;
     }
 
+    private static int RunDoctor()
+    {
+        var now = DateTimeOffset.Now;
+        var saved = WithStateLock(() => SyncFarm(now));
+
+        var statePath = Storage.DefaultPath;
+        var stateOk = File.Exists(statePath);
+
+        var transcriptsOk = Directory.Exists(ProjectsRoot);
+        var jsonlCount = transcriptsOk
+            ? Directory.EnumerateFiles(ProjectsRoot, "*.jsonl", SearchOption.AllDirectories).Count()
+            : 0;
+
+        var parseOk = saved.Diag.ParseErrors == 0;
+        var statuslineOk = IsStatuslineRegistered();
+        var speed = Environment.GetEnvironmentVariable("BACKYARD_SPEED") is { Length: > 0 } s ? s : DoctorText.DefaultSpeed;
+
+        var table = new Table().Border(TableBorder.Square).BorderColor(Color.Grey);
+        foreach (var header in DoctorText.Headers)
+            table.AddColumn(new TableColumn($"[{TuiColors.Muted}]{header}[/]"));
+
+        void Row(string item, bool ok, string detail) =>
+            table.AddRow(item, ok ? DoctorText.Ok : $"[{TuiColors.Dry}]{DoctorText.Bad}[/]", Markup.Escape(detail));
+
+        Row(DoctorText.State, stateOk, stateOk ? statePath : DoctorText.StateMissing);
+        Row(DoctorText.Transcripts, transcriptsOk, transcriptsOk ? $"{ProjectsRoot} ({jsonlCount} jsonl files)" : DoctorText.TranscriptsMissing);
+        Row(DoctorText.LastEvent, true, FormatAgo(saved.Diag.LastDetectedAt, now));
+        Row(DoctorText.Parse, parseOk, $"{saved.Diag.ParseErrors} errors, {saved.Diag.UnknownLines} unknown lines");
+        Row(DoctorText.Statusline, statuslineOk, statuslineOk ? DoctorText.StatuslineRegistered : DoctorText.StatuslineMissing);
+        Row(DoctorText.Speed, true, speed);
+
+        AnsiConsole.Write(table);
+        return transcriptsOk && parseOk && statuslineOk ? 0 : 1;
+    }
+
+    private static string FormatAgo(DateTimeOffset? at, DateTimeOffset now)
+    {
+        if (at is null)
+            return DoctorText.Never;
+        var span = now - at.Value;
+        if (span.TotalMinutes < 60)
+            return $"{(int)span.TotalMinutes}m ago";
+        if (span.TotalHours < 24)
+            return $"{(int)span.TotalHours}h ago";
+        return $"{(int)span.TotalDays}d ago";
+    }
+
+    private static bool IsStatuslineRegistered()
+    {
+        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "settings.json");
+        try
+        {
+            var settings = JsonSerializer.Deserialize(File.ReadAllText(path), BackyardJson.Default.ClaudeSettings);
+            var command = settings?.StatusLine?.Command?.Trim();
+            return command is not null && command.Contains("backyard") && command.EndsWith("status");
+        }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     private static string RunStatus()
     {
         var now = DateTimeOffset.Now;
@@ -155,6 +221,9 @@ public static class Program
             resync: () => WithStateLock(() => (FarmState)SyncFarm(DateTimeOffset.Now)));
     }
 
+    private static string ProjectsRoot =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "projects");
+
     private static T WithStateLock<T>(Func<T> action)
     {
         using var mutex = new Mutex(false, "backyard-state");
@@ -188,10 +257,8 @@ public static class Program
 
         var watcher = new Watcher(saved.WatcherCursors);
         var events = new List<WatchEvent>();
-        var projectsRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "projects");
-        if (Directory.Exists(projectsRoot))
-            events = watcher.Scan(projectsRoot);
+        if (Directory.Exists(ProjectsRoot))
+            events = watcher.Scan(ProjectsRoot);
 
         saved.Apply(events, now);
 
@@ -202,4 +269,23 @@ public static class Program
         storage.Save(saved);
         return saved;
     }
+}
+
+public static class DoctorText
+{
+    public static readonly string[] Headers = ["item", "status", "detail"];
+    public const string Ok = "ok";
+    public const string Bad = "!";
+    public const string State = "state";
+    public const string Transcripts = "transcripts";
+    public const string LastEvent = "last event";
+    public const string Parse = "parse";
+    public const string Statusline = "statusline";
+    public const string Speed = "speed";
+    public const string StateMissing = "not created yet (runs on first status)";
+    public const string TranscriptsMissing = "~/.claude/projects not found";
+    public const string StatuslineRegistered = "registered in ~/.claude/settings.json";
+    public const string StatuslineMissing = "not registered in ~/.claude/settings.json";
+    public const string Never = "never";
+    public const string DefaultSpeed = "1x";
 }
