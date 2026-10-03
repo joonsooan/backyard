@@ -5,9 +5,9 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "backyard", "src\backyard\backyard.csproj", "{3D45F291-3A09-470A-8517-823674FB39A1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "backyard", "src\Backyard\Backyard.csproj", "{3D45F291-3A09-470A-8517-823674FB39A1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "backyard.Tests", "tests\backyard.Tests\backyard.Tests.csproj", "{18CDC9CA-1F7C-4284-B085-7844A62DF987}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "backyard.Tests", "tests\Backyard.Tests\Backyard.Tests.csproj", "{18CDC9CA-1F7C-4284-B085-7844A62DF987}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
