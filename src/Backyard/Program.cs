@@ -30,7 +30,7 @@ public static class Program
             case "uninstall":
                 return RunUninstall();
             default:
-                return Tui.Run(DummySnapshot());
+                return RunTui();
         }
     }
 
@@ -56,6 +56,59 @@ public static class Program
     private static string RunStatus()
     {
         var now = DateTimeOffset.Now;
+        return WithStateLock(() =>
+        {
+            var (storage, saved, farm) = SyncFarm(now);
+            storage.Save(saved);
+            return StatusLine.Compose(farm, now, color: true);
+        });
+    }
+
+    private static int RunTui()
+    {
+        var farm = WithStateLock(() => SyncFarm(DateTimeOffset.Now)).Farm;
+        return Tui.Run(farm,
+            save: f => WithStateLock(() =>
+            {
+                var storage = new Storage(Storage.DefaultPath);
+                var saved = storage.Load() ?? new SavedState();
+                saved.CopyFrom(f);
+                storage.Save(saved);
+                return 0;
+            }),
+            resync: () => WithStateLock(() =>
+            {
+                var (storage, saved, synced) = SyncFarm(DateTimeOffset.Now);
+                storage.Save(saved);
+                return synced;
+            }));
+    }
+
+    private static T WithStateLock<T>(Func<T> action)
+    {
+        using var mutex = new Mutex(false, "backyard-state");
+        var owned = false;
+        try
+        {
+            try
+            {
+                owned = mutex.WaitOne(TimeSpan.FromSeconds(2));
+            }
+            catch (AbandonedMutexException)
+            {
+                owned = true;
+            }
+            return action();
+        }
+        finally
+        {
+            if (owned)
+                mutex.ReleaseMutex();
+        }
+    }
+
+    private static (Storage Storage, SavedState Saved, FarmState Farm) SyncFarm(DateTimeOffset now)
+    {
         if (int.TryParse(Environment.GetEnvironmentVariable("BACKYARD_SPEED"), out var speed) && speed >= 1)
             Balance.Speed = speed;
 
@@ -77,23 +130,6 @@ public static class Program
         saved.Diag.UnknownLines += watcher.UnknownLineCount;
         if (events.Count > 0)
             saved.Diag.LastDetectedAt = watcher.LastEventTimestamp;
-        storage.Save(saved);
-
-        return StatusLine.Compose(farm, now, color: true);
-    }
-
-    private static TuiSnapshot DummySnapshot()
-    {
-        var done = new string('▰', 10);
-        var waiting = new string('▰', 3) + new string('▱', 7);
-        var empty = new TuiCell(TuiText.EmptyGlyph, "empty", waiting + " -");
-        return new TuiSnapshot(12,
-        [
-            new TuiCell(TuiText.ReadyGlyph, "carrot │ Y ready to harvest", done + " done"),
-            new TuiCell(TuiText.SproutGlyph, "carrot │ , sprout", waiting + " 41m"),
-            new TuiCell(TuiText.SeedGlyph, "carrot │ . seed", waiting + " waiting for water"),
-            new TuiCell(TuiText.SeedGlyph, "potato │ . seed", waiting + " waiting for water"),
-            empty, empty, empty, empty, empty, empty
-        ]);
+        return (storage, saved, farm);
     }
 }

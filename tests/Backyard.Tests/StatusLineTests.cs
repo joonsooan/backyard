@@ -93,6 +93,15 @@ public class StatusLineTests
     }
 
     [Fact]
+    public void Compose_AnyRipeShowsHarvestMarkOverGrowing()
+    {
+        var farm = Farm(Cell("carrot", 2), Cell("carrot", 1, watered: true));
+        var line = StatusLine.Compose(farm, T0 + TimeSpan.FromMinutes(5));
+
+        Assert.EndsWith("│ Y!", line);
+    }
+
+    [Fact]
     public void Compose_EmptyFieldOmitsGrowthSegment()
     {
         Assert.Equal("[_ _ _ _ _ _ _ _ _ _] │ 12G", StatusLine.Compose(Farm(), T0));

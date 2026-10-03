@@ -48,24 +48,28 @@ public static class StatusLine
 
     private const string Dim = "\x1b[90m";
     private const string Green = "\x1b[32m";
+    private const string BoldGreen = "\x1b[1;32m";
     private const string Gold = "\x1b[93m";
+    private const string Tan = "\x1b[38;5;180m";
     private const string Reset = "\x1b[0m";
 
-    private static string Paint(char glyph, bool color) => !color ? glyph.ToString() : glyph switch
+    private static string Paint(char glyph, bool watered, bool color) => !color ? glyph.ToString() : glyph switch
     {
         '_' => $"{Dim}_{Reset}",
         'Y' => $"{Gold}Y{Reset}",
+        _ when !watered => $"{Tan}{glyph}{Reset}",
+        'v' => $"{BoldGreen}v{Reset}",
         _ => $"{Green}{glyph}{Reset}",
     };
 
     public static string FieldSegment(FarmCell?[] cells, int rows, bool color = false)
     {
         if (rows == 1)
-            return "[" + string.Join(' ', cells.Select(c => Paint(Glyph(c), color))) + "]";
-        var counts = cells.GroupBy(Glyph).ToDictionary(g => g.Key, g => g.Count());
+            return "[" + string.Join(' ', cells.Select(c => Paint(Glyph(c), c?.Watered ?? true, color))) + "]";
+        var groups = cells.GroupBy(Glyph).ToDictionary(g => g.Key, g => (Count: g.Count(), Watered: g.Any(c => c?.Watered ?? true)));
         return string.Join(' ', "Yv,._"
-            .Where(counts.ContainsKey)
-            .Select(g => $"{Paint(g, color)}:{counts[g]}"));
+            .Where(groups.ContainsKey)
+            .Select(g => $"{Paint(g, groups[g].Watered, color)}:{groups[g].Count}"));
     }
 
     public static string Compose(FarmState farm, DateTimeOffset now, bool color = false)
@@ -80,6 +84,8 @@ public static class StatusLine
         var planted = farm.Cells.OfType<FarmCell>().ToArray();
         if (planted.Length == 0)
             return null;
+        if (planted.Any(c => c.Stage >= Balance.Crops[c.Crop].MaxStage))
+            return color ? $"{Gold}Y!{Reset}" : "Y!";
         var growing = planted
             .Where(c => c.Watered && c.Stage < Balance.Crops[c.Crop].MaxStage)
             .ToArray();
@@ -89,9 +95,7 @@ public static class StatusLine
             var minutes = Math.Max(1, (int)Math.Ceiling((next - now).TotalMinutes));
             return color ? $"{Green}~ {minutes}m{Reset}" : $"~ {minutes}m";
         }
-        if (planted.All(c => c.Stage >= Balance.Crops[c.Crop].MaxStage))
-            return color ? $"{Gold}Y!{Reset}" : "Y!";
-        return color ? $"{Dim}dry{Reset}" : "dry";
+        return color ? $"{Tan}dry{Reset}" : "dry";
     }
 }
 
@@ -140,7 +144,7 @@ public sealed class FarmState
                 continue;
             var crop = Balance.Crops[cell.Crop];
             if (cell.Watered && cell.Stage < crop.MaxStage && cell.StageStartedAt + Balance.StageDuration <= now)
-                AdvanceStage(cell, crop, cell.StageStartedAt + Balance.StageDuration);
+                AdvanceStage(cell, cell.StageStartedAt + Balance.StageDuration);
         }
     }
 
@@ -155,7 +159,7 @@ public sealed class FarmState
             if (cell.Stage >= crop.MaxStage)
                 continue;
             if (cell.StageStartedAt + Balance.StageDuration <= at)
-                AdvanceStage(cell, crop, at);
+                AdvanceStage(cell, at);
             else
                 cell.Watered = true;
             wateredAny = true;
@@ -164,17 +168,11 @@ public sealed class FarmState
             LastWateredAt = at;
     }
 
-    private void AdvanceStage(FarmCell cell, CropInfo crop, DateTimeOffset at)
+    private static void AdvanceStage(FarmCell cell, DateTimeOffset at)
     {
         cell.Stage++;
         cell.Watered = false;
         cell.StageStartedAt = at;
-        if (cell.Stage >= crop.MaxStage)
-        {
-            Coins += crop.SellPrice - crop.SeedPrice;
-            HarvestCounts[cell.Crop] = HarvestCounts.GetValueOrDefault(cell.Crop) + 1;
-            cell.Stage = 0;
-        }
     }
 
     public bool TryPlant(int index, string cropName, DateTimeOffset now)

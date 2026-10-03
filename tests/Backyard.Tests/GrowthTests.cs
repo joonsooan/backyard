@@ -69,7 +69,7 @@ public class GrowthTests
     }
 
     [Fact]
-    public void OfflineReplay_ThreeEventsRaisePotatoThreeStagesAndHarvestIt()
+    public void OfflineReplay_ThreeEventsRaisePotatoToReady()
     {
         var state = FarmState.CreateNew(T0);
         state.Cells[0] = null;
@@ -78,23 +78,25 @@ public class GrowthTests
 
         state.Apply([EventAt(10), EventAt(40), EventAt(70)], At(100));
 
-        Assert.Equal(1, state.HarvestCounts["potato"]);
-        Assert.Equal(0, state.Cells[1]!.Stage);
-        Assert.Equal(coinsAfterPlanting + 10 - 5, state.Coins);
+        Assert.Equal(3, state.Cells[1]!.Stage);
+        Assert.Equal(coinsAfterPlanting, state.Coins);
+        Assert.False(state.HarvestCounts.ContainsKey("potato"));
     }
 
     [Fact]
-    public void AutoHarvest_SellsReplantsAndCountsCarrot()
+    public void ReadyCrop_StaysUntilManualHarvest()
     {
         var state = FarmState.CreateNew(T0);
 
-        state.Apply([EventAt(0), EventAt(15)], At(30));
+        state.Apply([EventAt(0), EventAt(15), EventAt(40)], At(60));
 
+        Assert.Equal(2, state.Cells[0]!.Stage);
+        Assert.Equal(10, state.Coins);
+
+        Assert.True(state.TryHarvest(0));
         Assert.Equal(1, state.HarvestCounts["carrot"]);
-        Assert.Equal(10 + 4 - 2, state.Coins);
-        Assert.Equal("carrot", state.Cells[0]!.Crop);
-        Assert.Equal(0, state.Cells[0]!.Stage);
-        Assert.False(state.Cells[0]!.Watered);
+        Assert.Equal(10 + 4, state.Coins);
+        Assert.Null(state.Cells[0]);
     }
 
     [Fact]
