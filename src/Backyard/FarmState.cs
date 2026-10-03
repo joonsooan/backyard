@@ -113,6 +113,14 @@ public class FarmState
         return true;
     }
 
+    public bool TryRemove(int index)
+    {
+        if (index < 0 || index >= Cells.Length || Cells[index] is null)
+            return false;
+        Cells[index] = null;
+        return true;
+    }
+
     public bool TryExpand()
     {
         if (Rows >= Balance.MaxRows)

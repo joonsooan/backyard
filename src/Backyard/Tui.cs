@@ -26,7 +26,7 @@ public static class TuiText
     public const string TooSmallQuitKey = $"esc[{TuiColors.Muted}]  quit[/]";
     public static readonly string[] ScreenNames = ["garden", "shop", "codex"];
     public const string MainKeysLine =
-        $" wasd[{TuiColors.Muted}] move │ [/]f[{TuiColors.Muted}] harvest │ [/]tab[{TuiColors.Muted}] next │ [/]r[{TuiColors.Muted}] resize │ [/]esc[{TuiColors.Muted}] quit[/]";
+        $" wasd[{TuiColors.Muted}] move │ [/]f[{TuiColors.Muted}] harvest │ [/]x[{TuiColors.Muted}] remove │ [/]tab[{TuiColors.Muted}] next │ [/]r[{TuiColors.Muted}] resize │ [/]esc[{TuiColors.Muted}] quit[/]";
     public const string ShopKeysLine =
         $" space[{TuiColors.Muted}] buy │ [/]tab[{TuiColors.Muted}] next │ [/]esc[{TuiColors.Muted}] quit[/]";
     public const string CodexKeysLine =
@@ -220,6 +220,10 @@ public static partial class Tui
                                     break;
                                 case ConsoleKey.F when screen == TuiScreen.Main:
                                     if (selected < farm.Cells.Length && farm.TryHarvest(selected, DateTimeOffset.Now))
+                                        save(farm);
+                                    break;
+                                case ConsoleKey.X when screen == TuiScreen.Main:
+                                    if (selected < farm.Cells.Length && farm.TryRemove(selected))
                                         save(farm);
                                     break;
                                 case ConsoleKey.Tab:

@@ -174,6 +174,18 @@ public class GrowthTests
     }
 
     [Fact]
+    public void TryRemove_ClearsPlantedCellOnly()
+    {
+        var state = new FarmState(T0);
+
+        Assert.True(state.TryRemove(0));
+        Assert.Null(state.Cells[0]);
+        Assert.False(state.TryRemove(0));
+        Assert.False(state.TryRemove(99));
+        Assert.Equal(10, state.Coins);
+    }
+
+    [Fact]
     public void FullField_HasNoRoomToPlant()
     {
         var state = new FarmState(T0);
