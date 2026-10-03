@@ -19,9 +19,23 @@ public static class Program
                 Console.WriteLine($"idle │ {state.Coins}G");
                 return 0;
             default:
-                AnsiConsole.MarkupLine("[green]backyard[/] — hello world");
-                return 0;
+                return Tui.Run(DummySnapshot());
         }
+    }
+
+    private static TuiSnapshot DummySnapshot()
+    {
+        var done = new string('▰', 10);
+        var waiting = new string('▰', 3) + new string('▱', 7);
+        var empty = new TuiCell(TuiText.EmptyGlyph, "empty", waiting + " -");
+        return new TuiSnapshot(12,
+        [
+            new TuiCell(TuiText.ReadyGlyph, "carrot │ Y ready to harvest", done + " done"),
+            new TuiCell(TuiText.SproutGlyph, "carrot │ , sprout", waiting + " 41m"),
+            new TuiCell(TuiText.SeedGlyph, "carrot │ . seed", waiting + " waiting for water"),
+            new TuiCell(TuiText.SeedGlyph, "potato │ . seed", waiting + " waiting for water"),
+            empty, empty, empty, empty, empty, empty
+        ]);
     }
 }
 
