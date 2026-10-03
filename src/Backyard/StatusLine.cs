@@ -54,15 +54,10 @@ public static class StatusLine
             return null;
         if (planted.Any(c => c.IsRipe))
             return color ? Link($"{Cyan}harvest!{Reset}") : "harvest!";
-        var growing = planted
-            .Where(c => c.IsGrowing)
-            .ToArray();
-        if (growing.Length > 0)
-        {
-            var next = growing.Min(c => c.NextStageAt);
-            var minutes = Math.Max(1, (int)Math.Ceiling((next - now).TotalMinutes));
-            return color ? Link($"{Green}~ {minutes}m{Reset}") : $"~ {minutes}m";
-        }
-        return color ? $"{Tan}waiting{Reset}" : "waiting";
+        if (planted.Any(c => !c.Watered))
+            return color ? Link($"{Tan}needs water{Reset}") : "needs water";
+        var next = planted.Min(c => c.NextStageAt);
+        var minutes = Math.Max(1, (int)Math.Ceiling((next - now).TotalMinutes));
+        return color ? Link($"{Green}~ {minutes}m{Reset}") : $"~ {minutes}m";
     }
 }

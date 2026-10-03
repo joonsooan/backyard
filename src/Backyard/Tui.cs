@@ -33,10 +33,13 @@ public static class TuiText
         $" tab[{TuiColors.Muted}] next │ [/]esc[{TuiColors.Muted}] quit[/]";
     public const string EmptyLabel = "empty";
     public const string LockedLabel = "locked";
+    public const string LockedHint = "buy extra row in shop";
     public const string NotEnoughGold = "not enough gold";
     public const string SoldOut = "sold out";
-    public const string RowItemName = "+row";
+    public const string RowItemName = "extra row";
     public const string RowItemDesc = "adds one more row to garden";
+    public const string NeedsWater = "waters when claude finishes a task";
+    public const string FirstWater = "finish a task to water";
     public const int BarWidth = 16;
     public const char StepFilled = '▰';
     public const char StepEmpty = '▱';
@@ -54,7 +57,6 @@ public static class TuiText
 public static class TuiColors
 {
     public const string Muted = "grey";
-    public const string Done = "green";
     public const string Dry = "tan";
     public const string Gold = "yellow";
     public const string Sprout = "green";
@@ -195,7 +197,7 @@ public static partial class Tui
                                     shopSelected = Math.Min(items.Length - 1, shopSelected + 1);
                                     shopMessage = "";
                                     break;
-                                case ConsoleKey.Enter or ConsoleKey.Spacebar when screen == TuiScreen.Shop:
+                                case ConsoleKey.Spacebar when screen == TuiScreen.Shop:
                                     shopMessage = Buy(farm, () => save(farm));
                                     break;
                                 case ConsoleKey.A or ConsoleKey.LeftArrow when screen == TuiScreen.Main:
@@ -234,7 +236,7 @@ public static partial class Tui
                                     TryResizeWindow(TuiText.ResizeWidth, TuiText.ResizeHeight);
                                     AnsiConsole.Clear();
                                     break;
-                                case ConsoleKey.Q or ConsoleKey.Escape:
+                                case ConsoleKey.Escape:
                                     quit = true;
                                     break;
                             }
@@ -282,7 +284,7 @@ public static partial class Tui
         return "";
     }
 
-    private static TuiCell CellView(FarmCell? cell, DateTimeOffset now)
+    private static TuiCell CellView(FarmCell? cell, DateTimeOffset now, bool neverWatered)
     {
         if (cell is null)
             return new TuiCell(TuiText.EmptyGlyph, null, "", 0, "");
@@ -291,7 +293,7 @@ public static partial class Tui
         if (cell.IsRipe)
             return new TuiCell(glyph, cell.Crop, label, 1, "");
         if (!cell.Watered)
-            return new TuiCell(glyph, cell.Crop, label, 0, "waiting for water", false);
+            return new TuiCell(glyph, cell.Crop, label, 0, neverWatered ? TuiText.FirstWater : TuiText.NeedsWater, false);
         var nextLabel = cell.Stage + 1 >= cell.Info.MaxStage ? "harvest" : "grow";
         return new TuiCell(glyph, cell.Crop, label, cell.Progress(now), $"{FormatRemaining(cell.NextStageAt - now)} to {nextLabel}");
     }
@@ -306,9 +308,10 @@ public static partial class Tui
     {
         var total = VisibleCellCount(farm);
         var views = new TuiCell[total];
+        var neverWatered = farm.LastWateredAt is null && farm.HarvestCounts.Count == 0;
         for (var i = 0; i < total; i++)
             views[i] = i < farm.Cells.Length
-                ? CellView(farm.Cells[i], now)
+                ? CellView(farm.Cells[i], now, neverWatered)
                 : new TuiCell(TuiText.LockedGlyph, null, "", 0, TuiText.LockedLabel);
         return views;
     }
@@ -389,7 +392,7 @@ public static partial class Tui
             if (gardenMessage.Length > 0)
             {
                 empty.Add("");
-                empty.Add($" [{TuiColors.Dry}]{Markup.Escape(Trunc(gardenMessage, panelInner))}[/]");
+                empty.AddRange(Wrap(gardenMessage, panelInner).Select(l => $" [{TuiColors.Dry}]{Markup.Escape(l)}[/]"));
             }
             return empty;
         }
@@ -398,7 +401,7 @@ public static partial class Tui
             [
                 $" [{TuiColors.Muted}]{TuiText.LockedLabel}[/]",
                 "",
-                $" [{TuiColors.Muted}]{Markup.Escape(Trunc($"+row {Balance.NextRowPrice(farm.Rows)}G in shop", panelInner))}[/]"
+                $" [{TuiColors.Muted}]{TuiText.LockedHint}[/]"
             ];
 
         var panel = new List<string>
@@ -408,8 +411,7 @@ public static partial class Tui
             "",
             " " + ProgressBarMarkup(cell.Fraction, Math.Min(TuiText.BarWidth, panelInner))
         };
-        if (cell.Status.Length > 0)
-            panel.Add(" " + StatusMarkup(Trunc(cell.Status, panelInner)));
+        panel.AddRange(Wrap(cell.Status, panelInner).Select(l => " " + StatusMarkup(l)));
         return panel;
     }
 
@@ -423,6 +425,22 @@ public static partial class Tui
 
     private static string Trunc(string text, int width) =>
         text.Length <= width ? text : text[..width];
+
+    private static IEnumerable<string> Wrap(string text, int width)
+    {
+        var line = "";
+        foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (line.Length > 0 && line.Length + 1 + word.Length > width)
+            {
+                yield return line;
+                line = "";
+            }
+            line = line.Length == 0 ? word : $"{line} {word}";
+        }
+        if (line.Length > 0)
+            yield return line;
+    }
 
     private static string StatusMarkup(string text)
     {
@@ -461,12 +479,12 @@ public static partial class Tui
             $" [bold]{Markup.Escape(Trunc(item.Name, panelInner))}[/]",
             $" [{TuiColors.Gold}]{Markup.Escape(item.Price)}[/]",
             "",
-            $" [{TuiColors.Muted}]{Markup.Escape(Trunc(item.Desc, panelInner))}[/]"
         };
+        panel.AddRange(Wrap(item.Desc, panelInner).Select(l => $" [{TuiColors.Muted}]{Markup.Escape(l)}[/]"));
         if (shopMessage.Length > 0)
         {
             panel.Add("");
-            panel.Add($" [{TuiColors.Dry}]{Markup.Escape(Trunc(shopMessage, panelInner))}[/]");
+            panel.AddRange(Wrap(shopMessage, panelInner).Select(l => $" [{TuiColors.Dry}]{Markup.Escape(l)}[/]"));
         }
 
         var body = new List<string>();
@@ -490,7 +508,7 @@ public static partial class Tui
         foreach (var info in Balance.Crops)
         {
             var count = farm.HarvestCounts.GetValueOrDefault(info.Name);
-            var grow = $"{(int)info.GrowTime.TotalMinutes}m";
+            var grow = $"{info.MaxStage} x {(int)Balance.StageDuration.TotalMinutes}m";
             var line = count > 0
                 ? $" [bold]{Markup.Escape(info.Name),-17}[/]{grow,-12}{$"{info.SeedPrice}G",-12}{$"{info.SellPrice}G",-12}{count,-11}{(farm.FirstHarvestAt.TryGetValue(info.Name, out var first) ? first.ToString("yyyy-MM-dd") : "-")}"
                 : $" [{TuiColors.Muted}]{"???",-17}{grow,-12}{$"{info.SeedPrice}G",-12}{"?",-12}{0,-11}-[/]";

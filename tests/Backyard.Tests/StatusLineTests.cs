@@ -77,11 +77,19 @@ public class StatusLineTests
     }
 
     [Fact]
-    public void Compose_UnwateredShowsDry()
+    public void Compose_UnwateredShowsNeedsWater()
     {
         var line = StatusLine.Compose(Farm(Cell("carrot", 0)), T0);
 
-        Assert.Equal("[. _ _ _ _ _ _ _ _ _] │ 12G │ waiting", line);
+        Assert.Equal("[. _ _ _ _ _ _ _ _ _] │ 12G │ needs water", line);
+    }
+
+    [Fact]
+    public void Compose_AnyUnwateredBeatsMinutes()
+    {
+        var line = StatusLine.Compose(Farm(Cell("carrot", 1, watered: true), Cell("carrot", 0)), T0);
+
+        Assert.EndsWith("│ needs water", line);
     }
 
     [Fact]
