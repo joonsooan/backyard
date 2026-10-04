@@ -3,7 +3,6 @@ namespace Backyard;
 public static class Balance
 {
     public static int Speed = 1;
-    public static TimeSpan StageDuration => TimeSpan.FromMinutes(10.0 / Speed);
     public const int Columns = 10;
     public const int MaxRows = 10;
     public const int StartCoins = 10;
@@ -19,8 +18,11 @@ public static class Balance
 
     public static readonly CropInfo[] Crops =
     [
-        new("carrot", MaxStage: 2, SeedPrice: 2, SellPrice: 4),
-        new("potato", MaxStage: 3, SeedPrice: 6, SellPrice: 12),
+        new("carrot", MaxStage: 1, StageMinutes: 5, SeedPrice: 1, SellPrice: 2),
+        new("radish", MaxStage: 2, StageMinutes: 10, SeedPrice: 2, SellPrice: 6),
+        new("potato", MaxStage: 3, StageMinutes: 10, SeedPrice: 6, SellPrice: 15),
+        new("tomato", MaxStage: 3, StageMinutes: 15, SeedPrice: 10, SellPrice: 22),
+        new("pumpkin", MaxStage: 3, StageMinutes: 20, SeedPrice: 16, SellPrice: 31),
     ];
 
     public static CropInfo? Crop(string name) => Array.Find(Crops, c => c.Name == name);
@@ -28,7 +30,8 @@ public static class Balance
     public static CropInfo CropOrFallback(string name) => Crop(name) ?? Crops[0];
 }
 
-public sealed record CropInfo(string Name, int MaxStage, int SeedPrice, int SellPrice, bool Retired = false)
+public sealed record CropInfo(string Name, int MaxStage, int StageMinutes, int SeedPrice, int SellPrice, bool Retired = false)
 {
-    public TimeSpan GrowTime => Balance.StageDuration * MaxStage;
+    public TimeSpan StageDuration => TimeSpan.FromMinutes((double)StageMinutes / Balance.Speed);
+    public TimeSpan GrowTime => StageDuration * MaxStage;
 }

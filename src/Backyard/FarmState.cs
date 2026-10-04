@@ -12,10 +12,10 @@ public sealed class FarmCell
     [JsonIgnore] public CropInfo Info => Balance.CropOrFallback(Crop);
     [JsonIgnore] public bool IsRipe => Stage >= Info.MaxStage;
     [JsonIgnore] public bool IsGrowing => Watered && !IsRipe;
-    [JsonIgnore] public DateTimeOffset NextStageAt => StageStartedAt + Balance.StageDuration;
+    [JsonIgnore] public DateTimeOffset NextStageAt => StageStartedAt + Info.StageDuration;
 
     public double Progress(DateTimeOffset now) =>
-        IsRipe ? 1 : Math.Clamp((now - StageStartedAt) / Balance.StageDuration, 0, 1);
+        IsRipe ? 1 : Math.Clamp((now - StageStartedAt) / Info.StageDuration, 0, 1);
 
     public void AdvanceStage(DateTimeOffset at)
     {

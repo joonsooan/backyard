@@ -24,22 +24,23 @@ public class GrowthTests
     }
 
     [Fact]
-    public void Stage_RisesAfterTenMinutesWithWater()
+    public void Carrot_RipensAfterOneWateringAndFiveMinutes()
     {
         var state = new FarmState(T0);
 
-        state.Apply([EventAt(1)], At(15));
+        state.Apply([EventAt(1)], At(6));
 
         Assert.Equal(1, state.Cells[0]!.Stage);
+        Assert.True(state.Cells[0]!.IsRipe);
         Assert.False(state.Cells[0]!.Watered);
     }
 
     [Fact]
-    public void Stage_WaitsWithWaterUntilTenMinutesPass()
+    public void Stage_WaitsWithWaterUntilStageMinutesPass()
     {
         var state = new FarmState(T0);
 
-        state.Apply([EventAt(1)], At(5));
+        state.Apply([EventAt(1)], At(4));
 
         Assert.Equal(0, state.Cells[0]!.Stage);
         Assert.True(state.Cells[0]!.Watered);
@@ -61,7 +62,7 @@ public class GrowthTests
     {
         var state = new FarmState(T0);
 
-        state.Apply([EventAt(1), EventAt(2), EventAt(3)], At(5));
+        state.Apply([EventAt(1), EventAt(2), EventAt(3)], At(4));
 
         Assert.Equal(0, state.Cells[0]!.Stage);
         Assert.True(state.Cells[0]!.Watered);
@@ -84,19 +85,34 @@ public class GrowthTests
     }
 
     [Fact]
+    public void Pumpkin_NeedsTwentyMinutesPerStage()
+    {
+        var state = new FarmState(T0);
+        state.Coins = 16;
+        Assert.True(state.TryPlant(1, "pumpkin", T0));
+
+        state.Apply([EventAt(0)], At(19));
+        Assert.Equal(0, state.Cells[1]!.Stage);
+
+        state.Apply([], At(20));
+        Assert.Equal(1, state.Cells[1]!.Stage);
+        Assert.Equal(TimeSpan.FromMinutes(60), state.Cells[1]!.Info.GrowTime);
+    }
+
+    [Fact]
     public void ReadyCrop_StaysUntilManualHarvest()
     {
         var state = new FarmState(T0);
 
         state.Apply([EventAt(0), EventAt(15), EventAt(40)], At(60));
 
-        Assert.Equal(2, state.Cells[0]!.Stage);
+        Assert.Equal(1, state.Cells[0]!.Stage);
         Assert.Equal(10, state.Coins);
 
         Assert.True(state.TryHarvest(0, At(60)));
         Assert.Equal(1, state.HarvestCounts["carrot"]);
         Assert.Equal(At(60), state.FirstHarvestAt["carrot"]);
-        Assert.Equal(10 + 4, state.Coins);
+        Assert.Equal(10 + 2, state.Coins);
         Assert.Null(state.Cells[0]);
     }
 
@@ -118,10 +134,11 @@ public class GrowthTests
 
         Assert.False(state.TryPlant(0, "carrot", T0));
         Assert.True(state.TryPlant(1, "potato", T0));
-        Assert.True(state.TryPlant(2, "carrot", T0));
+        Assert.True(state.TryPlant(2, "radish", T0));
         Assert.True(state.TryPlant(3, "carrot", T0));
-        Assert.False(state.TryPlant(4, "carrot", T0));
-        Assert.False(state.TryPlant(4, "unknown", T0));
+        Assert.True(state.TryPlant(4, "carrot", T0));
+        Assert.False(state.TryPlant(5, "carrot", T0));
+        Assert.False(state.TryPlant(5, "unknown", T0));
         Assert.Equal(0, state.Coins);
     }
 

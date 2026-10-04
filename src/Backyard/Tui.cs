@@ -38,8 +38,7 @@ public static class TuiText
     public const string SoldOut = "sold out";
     public const string RowItemName = "extra row";
     public const string RowItemDesc = "adds one more row to garden";
-    public const string NeedsWater = "waters when claude finishes a task";
-    public const string FirstWater = "finish a task to water";
+    public const string NeedsWater = "finish a task to water";
     public const int BarWidth = 16;
     public const char StepFilled = '▰';
     public const char StepEmpty = '▱';
@@ -284,7 +283,7 @@ public static partial class Tui
         return "";
     }
 
-    private static TuiCell CellView(FarmCell? cell, DateTimeOffset now, bool neverWatered)
+    private static TuiCell CellView(FarmCell? cell, DateTimeOffset now)
     {
         if (cell is null)
             return new TuiCell(TuiText.EmptyGlyph, null, "", 0, "");
@@ -293,7 +292,7 @@ public static partial class Tui
         if (cell.IsRipe)
             return new TuiCell(glyph, cell.Crop, label, 1, "");
         if (!cell.Watered)
-            return new TuiCell(glyph, cell.Crop, label, 0, neverWatered ? TuiText.FirstWater : TuiText.NeedsWater, false);
+            return new TuiCell(glyph, cell.Crop, label, 0, TuiText.NeedsWater, false);
         var nextLabel = cell.Stage + 1 >= cell.Info.MaxStage ? "harvest" : "grow";
         return new TuiCell(glyph, cell.Crop, label, cell.Progress(now), $"{FormatRemaining(cell.NextStageAt - now)} to {nextLabel}");
     }
@@ -308,10 +307,9 @@ public static partial class Tui
     {
         var total = VisibleCellCount(farm);
         var views = new TuiCell[total];
-        var neverWatered = farm.LastWateredAt is null && farm.HarvestCounts.Count == 0;
         for (var i = 0; i < total; i++)
             views[i] = i < farm.Cells.Length
-                ? CellView(farm.Cells[i], now, neverWatered)
+                ? CellView(farm.Cells[i], now)
                 : new TuiCell(TuiText.LockedGlyph, null, "", 0, TuiText.LockedLabel);
         return views;
     }
@@ -508,7 +506,7 @@ public static partial class Tui
         foreach (var info in Balance.Crops)
         {
             var count = farm.HarvestCounts.GetValueOrDefault(info.Name);
-            var grow = $"{info.MaxStage} x {(int)Balance.StageDuration.TotalMinutes}m";
+            var grow = $"{info.StageMinutes}m x {info.MaxStage}";
             var line = count > 0
                 ? $" [bold]{Markup.Escape(info.Name),-17}[/]{grow,-12}{$"{info.SeedPrice}G",-12}{$"{info.SellPrice}G",-12}{count,-11}{(farm.FirstHarvestAt.TryGetValue(info.Name, out var first) ? first.ToString("yyyy-MM-dd") : "-")}"
                 : $" [{TuiColors.Muted}]{"???",-17}{grow,-12}{$"{info.SeedPrice}G",-12}{"?",-12}{0,-11}-[/]";
