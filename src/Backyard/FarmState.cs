@@ -31,8 +31,6 @@ public class FarmState
     public int Rows { get; set; }
     public FarmCell?[] Cells { get; set; } = [];
     public DateTimeOffset FirstRunAt { get; set; }
-    public DateTimeOffset? LastWateredAt { get; set; }
-    public DateTimeOffset? LastEventAt { get; set; }
     public Dictionary<string, int> HarvestCounts { get; set; } = [];
     public Dictionary<string, DateTimeOffset> FirstHarvestAt { get; set; } = [];
 
@@ -59,7 +57,6 @@ public class FarmState
                 continue;
             Settle(e.Timestamp);
             WaterReadyCells(e.Timestamp);
-            LastEventAt = e.Timestamp;
         }
         Settle(now);
     }
@@ -75,7 +72,6 @@ public class FarmState
 
     private void WaterReadyCells(DateTimeOffset at)
     {
-        var wateredAny = false;
         foreach (var cell in Planted)
         {
             if (cell.Watered || cell.IsRipe)
@@ -84,10 +80,7 @@ public class FarmState
                 cell.AdvanceStage(at);
             else
                 cell.Watered = true;
-            wateredAny = true;
         }
-        if (wateredAny)
-            LastWateredAt = at;
     }
 
     public bool TryPlant(int index, string cropName, DateTimeOffset now)

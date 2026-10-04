@@ -122,9 +122,17 @@ public class StatusLineTests
     }
 
     [Fact]
-    public void Compose_EmptyFieldOmitsGrowthSegment()
+    public void Compose_EmptyFieldShowsPlantPrompt()
     {
-        Assert.Equal("[_ _ _ _ _ _ _ _ _ _] │ 12G", StatusLine.Compose(Farm(), T0));
+        Assert.Equal("[_ _ _ _ _ _ _ _ _ _] │ 12G │ plant a seed!", StatusLine.Compose(Farm(), T0));
+    }
+
+    [Fact]
+    public void Compose_WithColor_EmptyFieldWrapsPlantPromptInHyperlink()
+    {
+        var line = StatusLine.Compose(Farm(), T0, color: true);
+        Assert.Contains("]8;;backyard://open\\", line);
+        Assert.Contains("plant a seed!", line);
     }
 
     [Fact]

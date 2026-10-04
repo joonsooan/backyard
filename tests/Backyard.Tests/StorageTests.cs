@@ -34,8 +34,6 @@ public sealed class StorageTests : IDisposable
             Rows = 2,
             Cells = new FarmCell?[20],
             FirstRunAt = now,
-            LastWateredAt = now.AddMinutes(5),
-            LastEventAt = now.AddMinutes(7),
             HarvestCounts = { ["carrot"] = 3 },
             FirstHarvestAt = { ["carrot"] = now.AddMinutes(3) },
             WatcherCursors = { ["session-a"] = new WatcherCursor { Offset = 1234, TurnId = "turn-1", SessionId = "session-a", ToolCounts = { ["Read"] = 2 } } },
@@ -56,8 +54,6 @@ public sealed class StorageTests : IDisposable
         Assert.True(loaded.Cells[1]!.Watered);
         Assert.Equal(now, loaded.Cells[1]!.StageStartedAt);
         Assert.Equal(now, loaded.FirstRunAt);
-        Assert.Equal(now.AddMinutes(5), loaded.LastWateredAt);
-        Assert.Equal(now.AddMinutes(7), loaded.LastEventAt);
         Assert.Equal(3, loaded.HarvestCounts["carrot"]);
         Assert.Equal(now.AddMinutes(3), loaded.FirstHarvestAt["carrot"]);
         Assert.Equal(1234L, loaded.WatcherCursors["session-a"].Offset);
@@ -75,8 +71,6 @@ public sealed class StorageTests : IDisposable
         storage.Save(new SavedState { Cells = new FarmCell?[10] });
         var loaded = storage.Load();
         Assert.NotNull(loaded);
-        Assert.Null(loaded.LastWateredAt);
-        Assert.Null(loaded.LastEventAt);
         Assert.Null(loaded.Diag.LastDetectedAt);
         Assert.All(loaded.Cells, Assert.Null);
     }

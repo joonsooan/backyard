@@ -132,37 +132,6 @@ public class WatcherTests : IDisposable
     }
 
     [Fact]
-    public void LatestSignal_IsWaiting_WhenLastRecordIsTurnDuration()
-    {
-        var watcher = new Watcher();
-        watcher.ReadFile(Fixture("session-tool-turn.jsonl"));
-
-        Assert.NotNull(watcher.LatestSignal);
-        Assert.Equal(AgentSignalKind.Waiting, watcher.LatestSignal!.Kind);
-        Assert.Equal(DateTimeOffset.Parse("2026-10-02T13:45:40.500Z"), watcher.LatestSignal.Timestamp);
-    }
-
-    [Fact]
-    public void LatestSignal_IsWorking_WhenRecordsFollowTurnDuration()
-    {
-        var lines = File.ReadAllLines(Fixture("session-tool-turn.jsonl"));
-        var path = Path.Combine(_tempDir, "session.jsonl");
-        File.WriteAllLines(path, lines[..^1]);
-
-        var watcher = new Watcher();
-        watcher.ReadFile(path);
-
-        Assert.NotNull(watcher.LatestSignal);
-        Assert.Equal(AgentSignalKind.Working, watcher.LatestSignal!.Kind);
-    }
-
-    [Fact]
-    public void LatestSignal_IsNull_WhenNothingRead()
-    {
-        Assert.Null(new Watcher().LatestSignal);
-    }
-
-    [Fact]
     public void IncrementalRead_PicksUpAppendedLines_WithoutDoubleCounting()
     {
         var lines = File.ReadAllLines(Fixture("session-tool-turn.jsonl"));

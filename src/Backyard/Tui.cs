@@ -60,11 +60,7 @@ public static class TuiColors
     public const string Gold = "yellow";
     public const string Sprout = "green";
     public const string Growing = "bold green";
-    public const string Ready = "yellow";
-    public const string Unwatered = "tan";
     public const string Empty = "dim grey";
-    public const string ProgressFull = "green";
-    public const string ProgressEmpty = "grey";
     public const string SelectedBorder = "bold white";
 }
 
@@ -409,7 +405,8 @@ public static partial class Tui
             "",
             " " + ProgressBarMarkup(cell.Fraction, Math.Min(TuiText.BarWidth, panelInner))
         };
-        panel.AddRange(Wrap(cell.Status, panelInner).Select(l => " " + StatusMarkup(l)));
+        var statusColor = cell.Watered ? TuiColors.Muted : TuiColors.Dry;
+        panel.AddRange(Wrap(cell.Status, panelInner).Select(l => $" [{statusColor}]{Markup.Escape(l)}[/]"));
         return panel;
     }
 
@@ -418,7 +415,7 @@ public static partial class Tui
         var filled = (int)Math.Round(fraction * barWidth);
         var filledPart = new string(TuiText.StepFilled, filled);
         var rest = new string(TuiText.StepEmpty, barWidth - filled);
-        return $"[{TuiColors.ProgressFull}]{filledPart}[/][{TuiColors.ProgressEmpty}]{rest}[/]";
+        return $"[{TuiColors.Sprout}]{filledPart}[/][{TuiColors.Muted}]{rest}[/]";
     }
 
     private static string Trunc(string text, int width) =>
@@ -438,18 +435,6 @@ public static partial class Tui
         }
         if (line.Length > 0)
             yield return line;
-    }
-
-    private static string StatusMarkup(string text)
-    {
-        var t = text.Trim();
-        var color = t switch
-        {
-            _ when t.Contains("ready") => TuiColors.Ready,
-            _ when t.Contains("water") => TuiColors.Dry,
-            _ => TuiColors.Muted
-        };
-        return $"[{color}]{Markup.Escape(t)}[/]";
     }
 
     private static string PadTo(string markup, int width) =>
@@ -546,10 +531,10 @@ public static partial class Tui
 
     private static string GlyphColor(TuiCell cell) => cell.Glyph switch
     {
-        TuiText.SeedGlyph or TuiText.SproutGlyph or TuiText.GrowingGlyph when !cell.Watered => TuiColors.Unwatered,
+        TuiText.SeedGlyph or TuiText.SproutGlyph or TuiText.GrowingGlyph when !cell.Watered => TuiColors.Dry,
         TuiText.SeedGlyph or TuiText.SproutGlyph => TuiColors.Sprout,
         TuiText.GrowingGlyph => TuiColors.Growing,
-        TuiText.ReadyGlyph => TuiColors.Ready,
+        TuiText.ReadyGlyph => TuiColors.Gold,
         _ => TuiColors.Empty
     };
 

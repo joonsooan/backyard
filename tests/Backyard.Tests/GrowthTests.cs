@@ -66,7 +66,6 @@ public class GrowthTests
 
         Assert.Equal(0, state.Cells[0]!.Stage);
         Assert.True(state.Cells[0]!.Watered);
-        Assert.Equal(At(1), state.LastWateredAt);
     }
 
     [Fact]
@@ -96,7 +95,6 @@ public class GrowthTests
 
         state.Apply([], At(20));
         Assert.Equal(1, state.Cells[1]!.Stage);
-        Assert.Equal(TimeSpan.FromMinutes(60), state.Cells[1]!.Info.GrowTime);
     }
 
     [Fact]
@@ -124,7 +122,6 @@ public class GrowthTests
         state.Apply([EventAt(5)], At(15));
 
         Assert.False(state.Cells[0]!.Watered);
-        Assert.Null(state.LastEventAt);
     }
 
     [Fact]

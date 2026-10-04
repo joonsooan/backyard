@@ -33,5 +33,4 @@ public static class Balance
 public sealed record CropInfo(string Name, int MaxStage, int StageMinutes, int SeedPrice, int SellPrice, bool Retired = false)
 {
     public TimeSpan StageDuration => TimeSpan.FromMinutes((double)StageMinutes / Balance.Speed);
-    public TimeSpan GrowTime => StageDuration * MaxStage;
 }

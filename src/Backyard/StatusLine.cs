@@ -43,15 +43,14 @@ public static class StatusLine
     public static string Compose(FarmState farm, DateTimeOffset now, bool color = false)
     {
         var coins = color ? $"{Gold}{farm.Coins}G{Reset}" : $"{farm.Coins}G";
-        var line = $"{FieldSegment(farm.Cells, farm.Rows, color)} │ {coins}";
-        return GrowthSegment(farm, now, color) is { } growth ? $"{line} │ {growth}" : line;
+        return $"{FieldSegment(farm.Cells, farm.Rows, color)} │ {coins} │ {GrowthSegment(farm, now, color)}";
     }
 
-    private static string? GrowthSegment(FarmState farm, DateTimeOffset now, bool color)
+    private static string GrowthSegment(FarmState farm, DateTimeOffset now, bool color)
     {
         var planted = farm.Planted.ToArray();
         if (planted.Length == 0)
-            return null;
+            return color ? Link($"{Cyan}plant a seed!{Reset}") : "plant a seed!";
         if (planted.Any(c => c.IsRipe))
             return color ? Link($"{Cyan}harvest!{Reset}") : "harvest!";
         if (planted.Any(c => !c.Watered))

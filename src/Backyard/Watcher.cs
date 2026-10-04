@@ -4,10 +4,6 @@ using System.Text.Json.Serialization;
 
 namespace Backyard;
 
-public enum AgentSignalKind { Working, Waiting }
-
-public sealed record AgentSignal(AgentSignalKind Kind, DateTimeOffset Timestamp);
-
 public sealed record WatchEvent(
     string SessionId,
     string TurnId,
@@ -52,7 +48,6 @@ public sealed class Watcher(Dictionary<string, WatcherCursor>? cursors = null)
     public int ParseErrorCount { get; private set; }
     public int UnknownLineCount { get; private set; }
     public DateTimeOffset? LastEventTimestamp { get; private set; }
-    public AgentSignal? LatestSignal { get; private set; }
 
     public List<WatchEvent> Scan(string projectsRoot)
     {
@@ -133,8 +128,6 @@ public sealed class Watcher(Dictionary<string, WatcherCursor>? cursors = null)
         if (record.IsSidechain == true)
             return;
 
-        TrackSignal(record);
-
         switch (record.Type)
         {
             case "user" when record.PromptId is not null && StartsTurn(record.Message):
@@ -156,19 +149,6 @@ public sealed class Watcher(Dictionary<string, WatcherCursor>? cursors = null)
                     UnknownLineCount++;
                 break;
         }
-    }
-
-    private void TrackSignal(TranscriptLine record)
-    {
-        var isTurnEnd = record.Type == "system" && record.Subtype == "turn_duration";
-        if (!isTurnEnd && record.Type is not ("user" or "assistant"))
-            return;
-        if (!DateTimeOffset.TryParse(record.Timestamp, null, System.Globalization.DateTimeStyles.RoundtripKind, out var timestamp))
-            return;
-        if (LatestSignal is not null && timestamp < LatestSignal.Timestamp)
-            return;
-        var kind = isTurnEnd ? AgentSignalKind.Waiting : AgentSignalKind.Working;
-        LatestSignal = new AgentSignal(kind, timestamp);
     }
 
     private static bool StartsTurn(TranscriptMessage? message)
