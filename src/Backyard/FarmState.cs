@@ -33,6 +33,7 @@ public class FarmState
     public DateTimeOffset FirstRunAt { get; set; }
     public Dictionary<string, int> HarvestCounts { get; set; } = [];
     public Dictionary<string, DateTimeOffset> FirstHarvestAt { get; set; } = [];
+    public List<string> UnlockedCrops { get; set; } = [Balance.Crops[0].Name];
 
     public FarmState()
     {
@@ -48,6 +49,22 @@ public class FarmState
     }
 
     [JsonIgnore] public IEnumerable<FarmCell> Planted => Cells.OfType<FarmCell>();
+
+    [JsonIgnore]
+    public CropInfo? NextUnlock =>
+        Balance.Crops.FirstOrDefault(c => !c.Retired && !IsUnlocked(c.Name));
+
+    public bool IsUnlocked(string cropName) => UnlockedCrops.Contains(cropName);
+
+    public bool TryUnlock()
+    {
+        if (NextUnlock is not { } crop || Coins < crop.UnlockPrice)
+            return false;
+        Coins -= crop.UnlockPrice;
+        UnlockedCrops.Add(crop.Name);
+        UnlockedCrops.Sort((a, b) => Balance.CropOrder(a).CompareTo(Balance.CropOrder(b)));
+        return true;
+    }
 
     public void Apply(IEnumerable<WatchEvent> events, DateTimeOffset now)
     {
@@ -88,7 +105,7 @@ public class FarmState
         if (index < 0 || index >= Cells.Length || Cells[index] is not null)
             return false;
         var crop = Balance.Crop(cropName);
-        if (crop is null || crop.Retired || Coins < crop.SeedPrice)
+        if (crop is null || crop.Retired || !IsUnlocked(cropName) || Coins < crop.SeedPrice)
             return false;
         Coins -= crop.SeedPrice;
         Cells[index] = new FarmCell { Crop = cropName, Stage = 0, Watered = false, StageStartedAt = now };

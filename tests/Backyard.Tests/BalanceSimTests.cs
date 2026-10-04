@@ -17,6 +17,7 @@ public class BalanceSimTests(ITestOutputHelper output)
             var now = T0 + TimeSpan.FromMinutes(minute);
             state.Apply([new WatchEvent("sim", $"t{minute}", now, new Dictionary<string, int> { ["Bash"] = 1 })], now);
             HarvestAndReplant(state, now);
+            while (state.TryUnlock()) ;
             while (state.TryExpand())
                 PlantBest(state, now);
             if (state.Rows != rows)

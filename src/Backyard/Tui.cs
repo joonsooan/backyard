@@ -13,6 +13,7 @@ public enum TuiScreen
     Codex
 }
 
+// Every user-visible string lives here.
 public static class TuiText
 {
     public const int MinWidth = 100;
@@ -30,7 +31,15 @@ public static class TuiText
     public const string ShopKeysLine =
         $" space[{TuiColors.Muted}] buy │ [/]tab[{TuiColors.Muted}] next │ [/]esc[{TuiColors.Muted}] quit[/]";
     public const string CodexKeysLine =
-        $" tab[{TuiColors.Muted}] next │ [/]esc[{TuiColors.Muted}] quit[/]";
+        $" up/down[{TuiColors.Muted}] select │ [/]tab[{TuiColors.Muted}] next │ [/]esc[{TuiColors.Muted}] quit[/]";
+    public const string UnlockItemName = "{0} seeds";
+    public const string UnlockItemDesc = "unlocks {0}";
+    public const string UnlockGrowTime = "grow time  {0}m x {1}";
+    public const string UnlockSeed = "seed       {0}G";
+    public const string UnlockSell = "sell       {0}G";
+    public const string HiddenName = "???";
+    public const string FlavorLocked = "??? (harvest {0} times to read)";
+    public const string FlavorTitle = "interesting facts │ {0}";
     public const string EmptyLabel = "empty";
     public const string LockedLabel = "locked";
     public const string LockedHint = "buy extra row in shop";
@@ -64,6 +73,7 @@ public static class TuiColors
     public const string SelectedBorder = "bold white";
 }
 
+// Rendering and key handling only.
 public static partial class Tui
 {
     public const string WindowTitle = "backyard";
@@ -91,6 +101,7 @@ public static partial class Tui
     private static bool WindowTooSmall() =>
         Console.WindowWidth < TuiText.MinWidth || Console.WindowHeight < TuiText.MinHeight;
 
+    // Ask the terminal to grow via the xterm resize sequence first, then fall back to the Console API on Windows.
     private static void TryResizeWindow(int width, int height)
     {
         Console.Write($"\x1b[8;{height};{width}t");
@@ -110,6 +121,7 @@ public static partial class Tui
     private static int FieldWidth(int n) =>
         n * (CellInnerWidth + 2) + (n - 1) * CellGap;
 
+    // Redraw on every key, and re-read state.json every few seconds so transcript events show up while the TUI is open.
     private static readonly TimeSpan ResyncInterval = TimeSpan.FromSeconds(5);
 
     public static int Run(FarmState farm, Action<FarmState> save, Func<FarmState> resync)
@@ -122,6 +134,7 @@ public static partial class Tui
 
         var selected = 0;
         var shopSelected = 0;
+        var codexSelected = 0;
         var shopMessage = "";
         var gardenMessage = "";
         var screen = TuiScreen.Main;
@@ -133,7 +146,7 @@ public static partial class Tui
             try
             {
                 farm.Settle(DateTimeOffset.Now);
-                AnsiConsole.Live(View(farm, selected, shopSelected, shopMessage, gardenMessage, screen)).Start(ctx =>
+                AnsiConsole.Live(View(farm, selected, shopSelected, codexSelected, shopMessage, gardenMessage, screen)).Start(ctx =>
                 {
                     ctx.Refresh();
                     var lastSize = (Console.WindowWidth, Console.WindowHeight);
@@ -173,9 +186,9 @@ public static partial class Tui
                                 && selected < farm.Cells.Length && farm.Cells[selected] is null)
                             {
                                 var cropIndex = key.KeyChar - '1';
-                                if (cropIndex < ShopCrops.Length)
+                                if (cropIndex < Balance.Crops.Length)
                                 {
-                                    if (farm.TryPlant(selected, ShopCrops[cropIndex].Name, DateTimeOffset.Now))
+                                    if (farm.TryPlant(selected, Balance.Crops[cropIndex].Name, DateTimeOffset.Now))
                                         save(farm);
                                     else
                                         gardenMessage = TuiText.NotEnoughGold;
@@ -193,7 +206,14 @@ public static partial class Tui
                                     shopMessage = "";
                                     break;
                                 case ConsoleKey.Spacebar when screen == TuiScreen.Shop:
-                                    shopMessage = Buy(farm, () => save(farm));
+                                    shopMessage = Buy(farm, items[shopSelected].Id, () => save(farm));
+                                    shopSelected = Math.Min(shopSelected, ShopItems(farm).Length - 1);
+                                    break;
+                                case ConsoleKey.W or ConsoleKey.UpArrow when screen == TuiScreen.Codex:
+                                    codexSelected = Math.Max(0, codexSelected - 1);
+                                    break;
+                                case ConsoleKey.S or ConsoleKey.DownArrow when screen == TuiScreen.Codex:
+                                    codexSelected = Math.Min(CodexCrops(farm).Length - 1, codexSelected + 1);
                                     break;
                                 case ConsoleKey.A or ConsoleKey.LeftArrow when screen == TuiScreen.Main:
                                     selected = selected % Balance.Columns > 0
@@ -237,7 +257,7 @@ public static partial class Tui
                             }
                         }
                         farm.Settle(DateTimeOffset.Now);
-                        ctx.UpdateTarget(View(farm, selected, shopSelected, shopMessage, gardenMessage, screen));
+                        ctx.UpdateTarget(View(farm, selected, shopSelected, codexSelected, shopMessage, gardenMessage, screen));
                         var waited = 0;
                         while (!quit && !Console.KeyAvailable && waited < 200)
                         {
@@ -256,25 +276,47 @@ public static partial class Tui
         return 0;
     }
 
+    // The garden shows all unlocked rows plus one locked preview row.
     private static int VisibleRowCount(FarmState farm) =>
         Math.Min(farm.Rows + 1, Balance.MaxRows);
 
     private static int VisibleCellCount(FarmState farm) =>
         VisibleRowCount(farm) * Balance.Columns;
 
-    private static (string Name, string Price, string Desc, string Id)[] ShopItems(FarmState farm) =>
-    [
-        (TuiText.RowItemName,
-            farm.Rows >= Balance.MaxRows ? TuiText.SoldOut : $"{Balance.NextRowPrice(farm.Rows)}G",
-            TuiText.RowItemDesc, TuiText.RowItemName)
-    ];
+    private const string UnlockId = "unlock";
+    private const string HiddenId = "hidden";
 
-    private static string Buy(FarmState farm, Action save)
+    private static (string Name, string Price, string Desc, string Id)[] ShopItems(FarmState farm)
     {
-        if (farm.Rows >= Balance.MaxRows)
-            return TuiText.SoldOut;
-        if (!farm.TryExpand())
-            return TuiText.NotEnoughGold;
+        var items = new List<(string, string, string, string)>
+        {
+            (TuiText.RowItemName,
+                farm.Rows >= Balance.MaxRows ? TuiText.SoldOut : $"{Balance.NextRowPrice(farm.Rows)}G",
+                TuiText.RowItemDesc, TuiText.RowItemName)
+        };
+        if (farm.NextUnlock is { } next)
+        {
+            items.Add((string.Format(TuiText.UnlockItemName, next.Name), $"{next.UnlockPrice}G",
+                string.Format(TuiText.UnlockItemDesc, next.Name), UnlockId));
+            var hidden = ShopCrops.Count(c => !farm.IsUnlocked(c.Name)) - 1;
+            for (var i = 0; i < hidden; i++)
+                items.Add((TuiText.HiddenName, "", "", HiddenId));
+        }
+        return items.ToArray();
+    }
+
+    private static string Buy(FarmState farm, string id, Action save)
+    {
+        switch (id)
+        {
+            case TuiText.RowItemName when farm.Rows >= Balance.MaxRows:
+                return TuiText.SoldOut;
+            case TuiText.RowItemName when !farm.TryExpand():
+            case UnlockId when !farm.TryUnlock():
+                return TuiText.NotEnoughGold;
+            case HiddenId:
+                return "";
+        }
         save();
         return "";
     }
@@ -310,10 +352,10 @@ public static partial class Tui
         return views;
     }
 
-    private static Markup View(FarmState farm, int selected, int shopSelected, string shopMessage, string gardenMessage, TuiScreen screen) =>
+    private static Markup View(FarmState farm, int selected, int shopSelected, int codexSelected, string shopMessage, string gardenMessage, TuiScreen screen) =>
         WindowTooSmall()
             ? TooSmallView()
-            : Render(farm, selected, shopSelected, shopMessage, gardenMessage, screen);
+            : Render(farm, selected, shopSelected, codexSelected, shopMessage, gardenMessage, screen);
 
     private static Markup TooSmallView() => new(string.Join("\n",
         TuiText.TooSmallTitle,
@@ -324,7 +366,8 @@ public static partial class Tui
         TuiText.TooSmallResizeKey,
         TuiText.TooSmallQuitKey));
 
-    private static Markup Render(FarmState farm, int selected, int shopSelected, string shopMessage, string gardenMessage, TuiScreen screen)
+    // Frame layout: top border, body (screen-specific), separator, key hint line. Sizes follow the console window.
+    private static Markup Render(FarmState farm, int selected, int shopSelected, int codexSelected, string shopMessage, string gardenMessage, TuiScreen screen)
     {
         var frameWidth = Math.Max(TuiText.MinWidth, Console.WindowWidth - 2);
         var frameHeight = Math.Max(TuiText.MinHeight - 1, Console.WindowHeight - 1);
@@ -335,7 +378,7 @@ public static partial class Tui
         var (body, keys) = screen switch
         {
             TuiScreen.Shop => (ShopBody(farm, inner, bodyHeight, shopSelected, shopMessage), TuiText.ShopKeysLine),
-            TuiScreen.Codex => (CodexBody(farm, inner), TuiText.CodexKeysLine),
+            TuiScreen.Codex => (CodexBody(farm, inner, bodyHeight, codexSelected), TuiText.CodexKeysLine),
             _ => (MainBody(farm, cells, selected, gardenMessage, inner, bodyHeight), TuiText.MainKeysLine)
         };
 
@@ -354,23 +397,13 @@ public static partial class Tui
 
     private static List<string> MainBody(FarmState farm, TuiCell[] cells, int selected, string gardenMessage, int inner, int bodyHeight)
     {
-        var cell = cells[selected];
-        var body = new List<string>();
-        var columnRows = Math.Max(5, bodyHeight);
         var leftWidth = FieldWidth(Balance.Columns) + FieldSideMargin * 2;
         var panelWidth = Math.Max(3, inner - leftWidth - 1);
         var left = FieldLines(cells, selected).ToList();
         left.Insert(0, "");
-        var panel = InfoPanel(farm, cell, gardenMessage, panelWidth);
+        var panel = InfoPanel(farm, cells[selected], gardenMessage, panelWidth);
         panel.Insert(0, "");
-
-        for (var row = 0; row < columnRows; row++)
-        {
-            var l = row < left.Count ? left[row] : "";
-            var r = row < panel.Count ? panel[row] : "";
-            body.Add(Framed(PadTo(l, leftWidth) + $"[{TuiColors.Muted}]│[/]" + r, inner));
-        }
-        return body;
+        return Columns(left, panel, leftWidth, inner, bodyHeight);
     }
 
     private static readonly CropInfo[] ShopCrops = Balance.Crops.Where(c => !c.Retired).ToArray();
@@ -381,8 +414,11 @@ public static partial class Tui
         if (cell.Glyph == TuiText.EmptyGlyph)
         {
             var empty = new List<string> { $" [{TuiColors.Muted}]{TuiText.EmptyLabel}[/]", "" };
-            empty.AddRange(ShopCrops.Select((crop, i) =>
-                $" {i + 1} [{TuiColors.Muted}]{Markup.Escape(Trunc(crop.Name, panelInner - 8))}[/] [{TuiColors.Gold}]{crop.SeedPrice}G[/]"));
+            empty.AddRange(Balance.Crops
+                .Select((crop, i) => (crop, i))
+                .Where(x => !x.crop.Retired && farm.IsUnlocked(x.crop.Name))
+                .Select(x =>
+                    $" {x.i + 1} [{TuiColors.Muted}]{Markup.Escape(Trunc(x.crop.Name, panelInner - 8))}[/] [{TuiColors.Gold}]{x.crop.SeedPrice}G[/]"));
             if (gardenMessage.Length > 0)
             {
                 empty.Add("");
@@ -456,20 +492,42 @@ public static partial class Tui
 
         var item = items[shopSelected];
         var panelInner = Math.Max(1, panelWidth - 2);
-        var panel = new List<string>
+        var panel = new List<string> { "" };
+        switch (item.Id)
         {
-            "",
-            $" [bold]{Markup.Escape(Trunc(item.Name, panelInner))}[/]",
-            $" [{TuiColors.Gold}]{Markup.Escape(item.Price)}[/]",
-            "",
-        };
-        panel.AddRange(Wrap(item.Desc, panelInner).Select(l => $" [{TuiColors.Muted}]{Markup.Escape(l)}[/]"));
+            case HiddenId:
+                panel.Add($" [{TuiColors.Muted}]{TuiText.HiddenName}[/]");
+                break;
+            case UnlockId:
+                var next = farm.NextUnlock!;
+                panel.Add($" [bold]{Markup.Escape(next.Name)}[/]");
+                panel.Add($" [{TuiColors.Gold}]{Markup.Escape(item.Price)}[/]");
+                panel.Add("");
+                panel.AddRange(Wrap(item.Desc, panelInner).Select(l => $" [{TuiColors.Muted}]{Markup.Escape(l)}[/]"));
+                panel.Add("");
+                panel.Add($" [{TuiColors.Muted}]{string.Format(TuiText.UnlockGrowTime, next.StageMinutes, next.MaxStage)}[/]");
+                panel.Add($" [{TuiColors.Muted}]{string.Format(TuiText.UnlockSeed, next.SeedPrice)}[/]");
+                panel.Add($" [{TuiColors.Muted}]{string.Format(TuiText.UnlockSell, next.SellPrice)}[/]");
+                break;
+            default:
+                panel.Add($" [bold]{Markup.Escape(Trunc(item.Name, panelInner))}[/]");
+                panel.Add($" [{TuiColors.Gold}]{Markup.Escape(item.Price)}[/]");
+                panel.Add("");
+                panel.AddRange(Wrap(item.Desc, panelInner).Select(l => $" [{TuiColors.Muted}]{Markup.Escape(l)}[/]"));
+                break;
+        }
         if (shopMessage.Length > 0)
         {
             panel.Add("");
             panel.AddRange(Wrap(shopMessage, panelInner).Select(l => $" [{TuiColors.Dry}]{Markup.Escape(l)}[/]"));
         }
 
+        return Columns(left, panel, leftWidth, inner, bodyHeight);
+    }
+
+    // Two-column body used by garden and shop: list on the left, detail panel on the right, split by a vertical rule.
+    private static List<string> Columns(List<string> left, List<string> panel, int leftWidth, int inner, int bodyHeight)
+    {
         var body = new List<string>();
         var columnRows = Math.Max(Math.Max(left.Count, panel.Count), bodyHeight);
         for (var row = 0; row < columnRows; row++)
@@ -481,22 +539,52 @@ public static partial class Tui
         return body;
     }
 
-    private static List<string> CodexBody(FarmState farm, int inner)
+    private static CropInfo[] CodexCrops(FarmState farm) =>
+        Balance.Crops.Where(c => !c.Retired || farm.IsUnlocked(c.Name)).ToArray();
+
+    private static List<string> CodexBody(FarmState farm, int inner, int bodyHeight, int codexSelected)
     {
         var body = new List<string>
         {
             Framed("", inner),
-            Framed($" [{TuiColors.Muted}]{"name",-17}{"grow time",-12}{"seed price",-12}{"sell price",-12}{"harvested",-11}first harvest[/]", inner)
+            Framed($"  [{TuiColors.Muted}]{"name",-17}{"grow time",-12}{"seed price",-12}{"sell price",-12}{"harvested",-11}first harvest[/]", inner)
         };
-        foreach (var info in Balance.Crops)
+        var crops = CodexCrops(farm);
+        for (var i = 0; i < crops.Length; i++)
         {
+            var info = crops[i];
             var count = farm.HarvestCounts.GetValueOrDefault(info.Name);
             var grow = $"{info.StageMinutes}m x {info.MaxStage}";
-            var line = count > 0
-                ? $" [bold]{Markup.Escape(info.Name),-17}[/]{grow,-12}{$"{info.SeedPrice}G",-12}{$"{info.SellPrice}G",-12}{count,-11}{(farm.FirstHarvestAt.TryGetValue(info.Name, out var first) ? first.ToString("yyyy-MM-dd") : "-")}"
-                : $" [{TuiColors.Muted}]{"???",-17}{grow,-12}{$"{info.SeedPrice}G",-12}{"?",-12}{0,-11}-[/]";
+            var cursor = i == codexSelected ? "> " : "  ";
+            var line = farm.IsUnlocked(info.Name)
+                ? $"{cursor}{Markup.Escape(info.Name),-17}{grow,-12}{$"{info.SeedPrice}G",-12}{$"{info.SellPrice}G",-12}{count,-11}{(farm.FirstHarvestAt.TryGetValue(info.Name, out var first) ? first.ToString("yyyy-MM-dd") : "-")}"
+                : $"{cursor}[{TuiColors.Muted}]{TuiText.HiddenName,-17}{"?",-12}{"?",-12}{"?",-12}{0,-11}-[/]";
+            if (i == codexSelected) line = $"[bold]{line}[/]";
             body.Add(Framed(line, inner));
         }
+        var chosen = crops[Math.Clamp(codexSelected, 0, crops.Length - 1)];
+        var chosenName = farm.IsUnlocked(chosen.Name) ? chosen.Name : TuiText.HiddenName;
+        var flavorTitle = string.Format(TuiText.FlavorTitle, $"[white]{Markup.Escape(chosenName)}[/]");
+        var flavorBlock = new List<string>
+        {
+            Framed($"[{TuiColors.Muted}]── {flavorTitle} {new string('─', Math.Max(0, inner - VisibleWidth(flavorTitle) - 4))}[/]", inner),
+            Framed("", inner)
+        };
+        var harvested = farm.HarvestCounts.GetValueOrDefault(chosen.Name);
+        var flavor = Balance.Flavor.GetValueOrDefault(chosen.Name, []);
+        for (var i = 0; i < Balance.FlavorThresholds.Length; i++)
+        {
+            var threshold = Balance.FlavorThresholds[i];
+            var text = !farm.IsUnlocked(chosen.Name) ? TuiText.HiddenName
+                : harvested >= threshold && i < flavor.Length ? flavor[i]
+                : string.Format(TuiText.FlavorLocked, threshold);
+            var color = harvested >= threshold && farm.IsUnlocked(chosen.Name) ? "default" : TuiColors.Muted;
+            flavorBlock.Add(Framed($" - [{color}]{Markup.Escape(text)}[/]", inner));
+        }
+        flavorBlock.Add(Framed("", inner));
+        while (body.Count < bodyHeight - flavorBlock.Count)
+            body.Add(Framed("", inner));
+        body.AddRange(flavorBlock);
         return body;
     }
 
@@ -507,7 +595,7 @@ public static partial class Tui
         var right = screen switch
         {
             TuiScreen.Main => $"[{TuiColors.Muted}]{farm.Planted.Count()}/{farm.Cells.Length} planted │ [/][{TuiColors.Gold}]{farm.Coins}G[/]",
-            TuiScreen.Codex => $"[{TuiColors.Muted}]{farm.HarvestCounts.Count(kv => kv.Value > 0)}/{Balance.Crops.Length} discovered[/]",
+            TuiScreen.Codex => $"[{TuiColors.Muted}]{farm.UnlockedCrops.Count}/{Balance.Crops.Length} discovered[/]",
             _ => $"[{TuiColors.Gold}]{farm.Coins}G[/]"
         };
         var tail = new string('─', Math.Max(0, frameWidth - VisibleWidth(title) - VisibleWidth(right) - 9));

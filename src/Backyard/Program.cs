@@ -136,7 +136,7 @@ public static class Program
 
         var parseOk = saved.Diag.ParseErrors == 0;
         var statuslineOk = IsStatuslineRegistered();
-        var speed = Environment.GetEnvironmentVariable("BACKYARD_SPEED") is { Length: > 0 } s ? s : DoctorText.DefaultSpeed;
+        var speed = SpeedEnv is { Length: > 0 } s ? s : DoctorText.DefaultSpeed;
 
         var table = new Table().Border(TableBorder.Square).BorderColor(Color.Grey);
         foreach (var header in DoctorText.Headers)
@@ -247,9 +247,16 @@ public static class Program
         }
     }
 
+    private static string? SpeedEnv =>
+#if DEBUG
+        Environment.GetEnvironmentVariable("BACKYARD_SPEED");
+#else
+        null;
+#endif
+
     private static SavedState SyncFarm(DateTimeOffset now)
     {
-        if (int.TryParse(Environment.GetEnvironmentVariable("BACKYARD_SPEED"), out var speed) && speed >= 1)
+        if (int.TryParse(SpeedEnv, out var speed) && speed >= 1)
             Balance.Speed = speed;
 
         var storage = new Storage(Storage.DefaultPath);

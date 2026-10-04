@@ -65,6 +65,21 @@ public sealed class StorageTests : IDisposable
     }
 
     [Fact]
+    public void Load_MigratesVersion1_UnlockingPlantedAndHarvestedCrops()
+    {
+        var storage = NewStorage();
+        File.WriteAllText(storage.FilePath,
+            "{\"version\":1,\"coins\":5,\"rows\":1," +
+            "\"cells\":[null,{\"crop\":\"potato\",\"stage\":1,\"watered\":false,\"stageStartedAt\":\"2026-01-01T00:00:00+00:00\"}]," +
+            "\"firstRunAt\":\"2026-01-01T00:00:00+00:00\"," +
+            "\"harvestCounts\":{\"radish\":2}}");
+        var loaded = storage.Load();
+        Assert.NotNull(loaded);
+        Assert.Equal(2, loaded.Version);
+        Assert.Equal(["carrot", "radish", "potato"], loaded.UnlockedCrops);
+    }
+
+    [Fact]
     public void SaveThenLoad_PreservesNullOptionals()
     {
         var storage = NewStorage();

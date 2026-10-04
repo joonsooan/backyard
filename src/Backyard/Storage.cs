@@ -5,7 +5,7 @@ namespace Backyard;
 
 public sealed class SavedState : FarmState
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public SavedState()
     {
@@ -58,6 +58,19 @@ public sealed class Storage(string filePath)
                 state.Version = 1;
                 goto case 1;
             case 1:
+                if (state.UnlockedCrops.All(c => c == Balance.Crops[0].Name))
+                {
+                    state.UnlockedCrops = new[] { Balance.Crops[0].Name }
+                        .Concat(state.HarvestCounts.Keys)
+                        .Concat(state.Planted.Select(c => c.Crop))
+                        .Where(c => Balance.Crop(c) is not null)
+                        .Distinct()
+                        .OrderBy(Balance.CropOrder)
+                        .ToList();
+                }
+                state.Version = 2;
+                goto case 2;
+            case 2:
                 return state;
             default:
                 throw new JsonException($"state version {state.Version} is newer than supported {SavedState.CurrentVersion}");

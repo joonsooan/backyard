@@ -9,14 +9,61 @@ public class GrowthTests
     private static WatchEvent EventAt(int minutes, string turnId = "t") =>
         new("session", turnId + minutes, At(minutes), new Dictionary<string, int> { ["Bash"] = 1 });
 
+    private static CropInfo Crop(string name) => Balance.Crop(name)!;
+
+    private static FarmState AllUnlocked()
+    {
+        var state = new FarmState(T0);
+        state.UnlockedCrops = Balance.Crops.Select(c => c.Name).ToList();
+        return state;
+    }
+
     [Fact]
-    public void CreateNew_StartsWithTenCoinsOneRowAndFreeCarrot()
+    public void TryPlant_FailsForLockedCrop()
+    {
+        var state = new FarmState(T0);
+        state.Coins = 100;
+        Assert.Equal(["carrot"], state.UnlockedCrops);
+        Assert.False(state.TryPlant(1, "radish", T0));
+        Assert.Equal(100, state.Coins);
+    }
+
+    [Fact]
+    public void TryUnlock_FollowsCatalogOrderAndChargesUnlockPrice()
+    {
+        var state = new FarmState(T0);
+        var radish = Crop("radish");
+        state.Coins = radish.UnlockPrice - 1;
+        Assert.Equal("radish", state.NextUnlock!.Name);
+        Assert.False(state.TryUnlock());
+        state.Coins = radish.UnlockPrice;
+        Assert.True(state.TryUnlock());
+        Assert.Equal(0, state.Coins);
+        Assert.Equal(["carrot", "radish"], state.UnlockedCrops);
+        Assert.Equal("potato", state.NextUnlock!.Name);
+        Assert.False(state.IsUnlocked("potato"));
+        state.Coins = radish.SeedPrice;
+        Assert.True(state.TryPlant(1, "radish", T0));
+    }
+
+    [Fact]
+    public void TryUnlock_FailsWhenEverythingIsUnlocked()
+    {
+        var state = AllUnlocked();
+        state.Coins = 10000;
+        Assert.Null(state.NextUnlock);
+        Assert.False(state.TryUnlock());
+        Assert.Equal(10000, state.Coins);
+    }
+
+    [Fact]
+    public void CreateNew_StartsWithStartCoinsOneRowAndFreeCarrot()
     {
         var state = new FarmState(T0);
 
-        Assert.Equal(10, state.Coins);
+        Assert.Equal(Balance.StartCoins, state.Coins);
         Assert.Equal(1, state.Rows);
-        Assert.Equal(10, state.Cells.Length);
+        Assert.Equal(Balance.Columns, state.Cells.Length);
         Assert.Equal("carrot", state.Cells[0]!.Crop);
         Assert.Equal(0, state.Cells[0]!.Stage);
         Assert.All(state.Cells.Skip(1), c => Assert.Null(c));
@@ -24,11 +71,11 @@ public class GrowthTests
     }
 
     [Fact]
-    public void Carrot_RipensAfterOneWateringAndFiveMinutes()
+    public void Carrot_RipensAfterOneWateringAndStageMinutes()
     {
         var state = new FarmState(T0);
 
-        state.Apply([EventAt(1)], At(6));
+        state.Apply([EventAt(1)], At(1 + Crop("carrot").StageMinutes));
 
         Assert.Equal(1, state.Cells[0]!.Stage);
         Assert.True(state.Cells[0]!.IsRipe);
@@ -40,7 +87,7 @@ public class GrowthTests
     {
         var state = new FarmState(T0);
 
-        state.Apply([EventAt(1)], At(4));
+        state.Apply([EventAt(1)], At(Crop("carrot").StageMinutes - 1));
 
         Assert.Equal(0, state.Cells[0]!.Stage);
         Assert.True(state.Cells[0]!.Watered);
@@ -62,7 +109,7 @@ public class GrowthTests
     {
         var state = new FarmState(T0);
 
-        state.Apply([EventAt(1), EventAt(2), EventAt(3)], At(4));
+        state.Apply([EventAt(1), EventAt(2), EventAt(3)], At(Crop("carrot").StageMinutes - 1));
 
         Assert.Equal(0, state.Cells[0]!.Stage);
         Assert.True(state.Cells[0]!.Watered);
@@ -71,29 +118,33 @@ public class GrowthTests
     [Fact]
     public void OfflineReplay_ThreeEventsRaisePotatoToReady()
     {
-        var state = new FarmState(T0);
+        var state = AllUnlocked();
+        var potato = Crop("potato");
+        state.Coins = potato.SeedPrice;
         state.Cells[0] = null;
         Assert.True(state.TryPlant(1, "potato", T0));
         var coinsAfterPlanting = state.Coins;
 
-        state.Apply([EventAt(10), EventAt(40), EventAt(70)], At(100));
+        var m = potato.StageMinutes;
+        state.Apply([EventAt(m), EventAt(4 * m), EventAt(7 * m)], At(10 * m));
 
-        Assert.Equal(3, state.Cells[1]!.Stage);
+        Assert.Equal(potato.MaxStage, state.Cells[1]!.Stage);
         Assert.Equal(coinsAfterPlanting, state.Coins);
         Assert.False(state.HarvestCounts.ContainsKey("potato"));
     }
 
     [Fact]
-    public void Pumpkin_NeedsTwentyMinutesPerStage()
+    public void Pumpkin_NeedsItsOwnStageMinutes()
     {
-        var state = new FarmState(T0);
-        state.Coins = 16;
+        var state = AllUnlocked();
+        var pumpkin = Crop("pumpkin");
+        state.Coins = pumpkin.SeedPrice;
         Assert.True(state.TryPlant(1, "pumpkin", T0));
 
-        state.Apply([EventAt(0)], At(19));
+        state.Apply([EventAt(0)], At(pumpkin.StageMinutes - 1));
         Assert.Equal(0, state.Cells[1]!.Stage);
 
-        state.Apply([], At(20));
+        state.Apply([], At(pumpkin.StageMinutes));
         Assert.Equal(1, state.Cells[1]!.Stage);
     }
 
@@ -105,12 +156,12 @@ public class GrowthTests
         state.Apply([EventAt(0), EventAt(15), EventAt(40)], At(60));
 
         Assert.Equal(1, state.Cells[0]!.Stage);
-        Assert.Equal(10, state.Coins);
+        Assert.Equal(Balance.StartCoins, state.Coins);
 
         Assert.True(state.TryHarvest(0, At(60)));
         Assert.Equal(1, state.HarvestCounts["carrot"]);
         Assert.Equal(At(60), state.FirstHarvestAt["carrot"]);
-        Assert.Equal(10 + 2, state.Coins);
+        Assert.Equal(Balance.StartCoins + Crop("carrot").SellPrice, state.Coins);
         Assert.Null(state.Cells[0]);
     }
 
@@ -127,42 +178,41 @@ public class GrowthTests
     [Fact]
     public void TryPlant_FailsOnOccupiedCellAndWithoutCoins()
     {
-        var state = new FarmState(T0);
+        var state = AllUnlocked();
+        state.Coins = Crop("potato").SeedPrice + Crop("radish").SeedPrice;
 
         Assert.False(state.TryPlant(0, "carrot", T0));
         Assert.True(state.TryPlant(1, "potato", T0));
         Assert.True(state.TryPlant(2, "radish", T0));
-        Assert.True(state.TryPlant(3, "carrot", T0));
-        Assert.True(state.TryPlant(4, "carrot", T0));
-        Assert.False(state.TryPlant(5, "carrot", T0));
-        Assert.False(state.TryPlant(5, "unknown", T0));
+        Assert.False(state.TryPlant(3, "carrot", T0));
+        Assert.False(state.TryPlant(3, "unknown", T0));
         Assert.Equal(0, state.Coins);
     }
 
     [Fact]
-    public void TryExpand_ChargesRowPricesAndStopsAtTenRows()
+    public void TryExpand_ChargesRowPricesAndStopsAtMaxRows()
     {
         var state = new FarmState(T0);
-        state.Coins = 200;
+        state.Coins = Balance.SecondRowPrice + Balance.ThirdRowPrice;
 
         Assert.True(state.TryExpand());
         Assert.Equal(2, state.Rows);
-        Assert.Equal(20, state.Cells.Length);
-        Assert.Equal(150, state.Coins);
+        Assert.Equal(2 * Balance.Columns, state.Cells.Length);
+        Assert.Equal(Balance.ThirdRowPrice, state.Coins);
 
         Assert.True(state.TryExpand());
         Assert.Equal(3, state.Rows);
-        Assert.Equal(30, state.Cells.Length);
+        Assert.Equal(3 * Balance.Columns, state.Cells.Length);
         Assert.Equal(0, state.Coins);
 
-        Assert.Equal(300, Balance.NextRowPrice(3));
-        Assert.Equal(19200, Balance.NextRowPrice(9));
+        Assert.Equal(2 * Balance.ThirdRowPrice, Balance.NextRowPrice(3));
+        Assert.Equal(128 * Balance.ThirdRowPrice, Balance.NextRowPrice(9));
 
-        state.Coins = 300 + 600 + 1200 + 2400 + 4800 + 9600 + 19200;
-        while (state.Rows < 10)
+        state.Coins = Enumerable.Range(3, Balance.MaxRows - 3).Sum(Balance.NextRowPrice);
+        while (state.Rows < Balance.MaxRows)
             Assert.True(state.TryExpand());
         Assert.Equal(0, state.Coins);
-        Assert.Equal(100, state.Cells.Length);
+        Assert.Equal(Balance.MaxRows * Balance.Columns, state.Cells.Length);
 
         state.Coins = 50000;
         Assert.False(state.TryExpand());
@@ -175,7 +225,7 @@ public class GrowthTests
 
         Assert.False(state.TryExpand());
         Assert.Equal(1, state.Rows);
-        Assert.Equal(10, state.Coins);
+        Assert.Equal(Balance.StartCoins, state.Coins);
     }
 
     [Fact]
@@ -196,18 +246,18 @@ public class GrowthTests
         Assert.Null(state.Cells[0]);
         Assert.False(state.TryRemove(0));
         Assert.False(state.TryRemove(99));
-        Assert.Equal(10, state.Coins);
+        Assert.Equal(Balance.StartCoins, state.Coins);
     }
 
     [Fact]
     public void FullField_HasNoRoomToPlant()
     {
         var state = new FarmState(T0);
-        state.Coins = 100;
+        state.Coins = Balance.Columns * Crop("carrot").SeedPrice;
         for (var i = 1; i < state.Cells.Length; i++)
             Assert.True(state.TryPlant(i, "carrot", T0));
 
         Assert.False(state.TryPlant(0, "carrot", T0));
-        Assert.False(state.TryPlant(10, "carrot", T0));
+        Assert.False(state.TryPlant(Balance.Columns, "carrot", T0));
     }
 }
