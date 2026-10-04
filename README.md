@@ -12,7 +12,7 @@ It comes in two forms: a one-line summary for your statusline, and a full-screen
 [. , v Y _ _ _ _ _ _] │ 12G │ ~ 4m
 ```
 
-This line sits in your Claude Code statusline. Each time Claude finishes a task that used a tool, your crops get watered.
+This line sits in your Claude Code statusline and updates as the farm grows.
 
 **The farm window** (`backyard`):
 
@@ -22,50 +22,35 @@ Opens a separate TUI with the garden, shop and codex. Here you harvest, sell, pl
 
 <br>
 
-## Features
-
-- Single native binary that is safe to run on every statusline refresh.
-- Grows only when a task that used a tool finishes. No usage-based rewards, no streaks, no wilting.
-
-<br>
-
 ## Installing
 
-Download the archive for your platform from [Releases](../../releases), unpack it, and put `backyard` on your `PATH`.
+Requires [.NET 10 SDK](https://dotnet.microsoft.com/download)
 
-| Platform            | Archive                     |
-| ------------------- | --------------------------- |
-| Windows x64         | `backyard-win-x64.zip`      |
-| Linux x64           | `backyard-linux-x64.tar.gz` |
-| macOS Apple Silicon | `backyard-osx-arm64.tar.gz` |
-
-Then add it to your Claude Code statusline in `~/.claude/settings.json`:
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "backyard status",
-    "refreshInterval": 1
-  }
-}
+```sh
+dotnet tool install -g backyard-farm
+backyard install
 ```
 
-If you already have a statusline command, append `backyard status` to it instead of replacing it.
+`backyard install` adds `backyard status` to the statusline in `~/.claude/settings.json` (appending to any existing statusline command).
 
-Run `backyard doctor` to check the setup.
+Start a new Claude Code session and the farm appears.
 
 <br>
 
 ## Usage
 
-| Command              | What it does                                                             |
-| -------------------- | ------------------------------------------------------------------------ |
-| `backyard status`    | Prints the one-line summary used by the statusline.                      |
-| `backyard`           | Opens the TUI: garden, shop, codex.                                      |
-| `backyard doctor`    | Shows why tasks are not being detected: paths, last event, parse errors. |
-| `backyard reset`     | Deletes the farm and starts over.                                        |
-| `backyard uninstall` | Removes the state directory and the `backyard://` link.                  |
+| Command              | What it does                                                                  |
+| -------------------- | ----------------------------------------------------------------------------- |
+| `backyard install`   | Registers `backyard status` in the statusline.                                |
+| `backyard status`    | Prints the one-line summary used by the statusline.                           |
+| `backyard`           | Opens the TUI: garden, shop, codex.                                           |
+| `backyard doctor`    | Shows why tasks are not being detected: paths, last event, parse errors.      |
+| `backyard reset`     | Deletes the farm and starts over.                                             |
+| `backyard uninstall` | Removes the statusline entry, the state directory and the `backyard://` link. |
+
+Update with `dotnet tool update -g backyard-farm`.
+
+Remove with `backyard uninstall` followed by `dotnet tool uninstall -g backyard-farm`.
 
 <br>
 
@@ -74,16 +59,15 @@ Run `backyard doctor` to check the setup.
 - Finishing a Claude Code task that used a tool waters every dry cell.
 - A cell that is already watered ignores further tasks until it grows.
 - Ripe crops are harvested and sold in the TUI.
+- No usage-based rewards, no streaks, no wilting.
 
 <br>
 
 ## Privacy
 
-backyard reads the Claude Code transcripts under `~/.claude/projects` to find "task finished" events.
+backyard reads the Claude Code transcripts under `~/.claude/projects` to find "task finished" events. It keeps only the event kind, the timestamp, and a per-file read position. It never stores or prints prompt text, code, file contents or project names.
 
-It keeps only the event kind, the timestamp, and a per-file read position. It never stores or prints prompt text, code, file contents or project names.
-
-State lives in a single `state.json` (`backyard doctor` shows the path).
+State lives in `state.json` next to a `state.json.bak` of the previous save (`backyard doctor` shows the path).
 
 <br>
 
