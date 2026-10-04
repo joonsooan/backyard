@@ -67,6 +67,9 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     env:
       VERSION: ${{ github.ref_name }}
     steps:
@@ -84,9 +87,15 @@ jobs:
       - name: Pack root tool package
         run: dotnet pack src/Backyard -c Release -p:Version=${VERSION#v} -o dist/nupkg
 
+      - name: NuGet login (Trusted Publishing)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
       - name: Push to NuGet (RID packages first, root last)
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: |
           for pkg in dist/nupkg/backyard-farm.win-*.nupkg dist/nupkg/backyard-farm.linux-*.nupkg dist/nupkg/backyard-farm.osx-*.nupkg; do
             dotnet nuget push "$pkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
