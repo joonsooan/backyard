@@ -34,20 +34,31 @@ public sealed class Storage(string filePath)
 
     public string FilePath { get; } = filePath;
 
+    public string BackupPath => FilePath + ".bak";
+    public string CorruptPath => FilePath + ".corrupt";
+
     public SavedState? Load()
     {
         if (!File.Exists(FilePath))
             return null;
         try
         {
-            var state = JsonSerializer.Deserialize(File.ReadAllText(FilePath), BackyardJson.Default.SavedState);
-            return state is null ? null : Migrate(state);
+            return Parse(File.ReadAllText(FilePath));
         }
         catch (JsonException)
         {
-            File.Copy(FilePath, FilePath + ".bak", overwrite: true);
-            return null;
+            File.Copy(FilePath, CorruptPath, overwrite: true);
+            if (!File.Exists(BackupPath))
+                throw;
+            return Parse(File.ReadAllText(BackupPath));
         }
+    }
+
+    private static SavedState Parse(string json)
+    {
+        var state = JsonSerializer.Deserialize(json, BackyardJson.Default.SavedState)
+                    ?? throw new JsonException("state is null");
+        return Migrate(state);
     }
 
     private static SavedState Migrate(SavedState state)
@@ -82,7 +93,10 @@ public sealed class Storage(string filePath)
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
         var tmp = $"{FilePath}.{Environment.ProcessId}.tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(state, BackyardJson.Default.SavedState));
-        File.Move(tmp, FilePath, overwrite: true);
+        if (File.Exists(FilePath))
+            File.Replace(tmp, FilePath, BackupPath, ignoreMetadataErrors: true);
+        else
+            File.Move(tmp, FilePath);
     }
 }
 

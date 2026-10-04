@@ -102,9 +102,10 @@ public static class Program
 
     private static int RunReset()
     {
-        var path = Storage.DefaultPath;
-        File.Delete(path);
-        File.Delete(path + ".bak");
+        var storage = new Storage(Storage.DefaultPath);
+        File.Delete(storage.FilePath);
+        File.Delete(storage.BackupPath);
+        File.Delete(storage.CorruptPath);
         Console.WriteLine("farm reset. a new farm starts on the next run.");
         return 0;
     }
@@ -124,10 +125,20 @@ public static class Program
     private static int RunDoctor()
     {
         var now = DateTimeOffset.Now;
-        var saved = WithStateLock(() => SyncFarm(now));
-
         var statePath = Storage.DefaultPath;
-        var stateOk = File.Exists(statePath);
+        SavedState saved;
+        string stateDetail;
+        try
+        {
+            saved = WithStateLock(() => SyncFarm(now));
+            stateDetail = statePath;
+        }
+        catch (Exception e) when (e is JsonException or TimeoutException)
+        {
+            saved = new SavedState(now);
+            stateDetail = e is JsonException ? string.Format(DoctorText.StateCorrupt, statePath) : DoctorText.StateLocked;
+        }
+        var stateOk = File.Exists(statePath) && stateDetail == statePath;
 
         var transcriptsOk = Directory.Exists(ProjectsRoot);
         var jsonlCount = transcriptsOk
@@ -145,7 +156,7 @@ public static class Program
         void Row(string item, bool ok, string detail) =>
             table.AddRow(item, ok ? DoctorText.Ok : $"[{TuiColors.Dry}]{DoctorText.Bad}[/]", Markup.Escape(detail));
 
-        Row(DoctorText.State, stateOk, stateOk ? statePath : DoctorText.StateMissing);
+        Row(DoctorText.State, stateOk, File.Exists(statePath) ? stateDetail : DoctorText.StateMissing);
         Row(DoctorText.Transcripts, transcriptsOk, transcriptsOk ? $"{ProjectsRoot} ({jsonlCount} jsonl files)" : DoctorText.TranscriptsMissing);
         Row(DoctorText.LastEvent, true, FormatAgo(saved.Diag.LastDetectedAt, now));
         Row(DoctorText.Parse, parseOk, $"{saved.Diag.ParseErrors} errors, {saved.Diag.UnknownLines} unknown lines");
@@ -153,7 +164,7 @@ public static class Program
         Row(DoctorText.Speed, true, speed);
 
         AnsiConsole.Write(table);
-        return transcriptsOk && parseOk && statuslineOk ? 0 : 1;
+        return stateOk && transcriptsOk && parseOk && statuslineOk ? 0 : 1;
     }
 
     private static string FormatAgo(DateTimeOffset? at, DateTimeOffset now)
@@ -238,6 +249,8 @@ public static class Program
             {
                 owned = true;
             }
+            if (!owned)
+                throw new TimeoutException("another backyard process holds the state lock");
             return action();
         }
         finally
@@ -290,6 +303,8 @@ public static class DoctorText
     public const string Statusline = "statusline";
     public const string Speed = "speed";
     public const string StateMissing = "not created yet (runs on first status)";
+    public const string StateCorrupt = "unreadable and no usable .bak; kept as {0}.corrupt. run backyard reset to start over";
+    public const string StateLocked = "another backyard process holds the state lock";
     public const string TranscriptsMissing = "~/.claude/projects not found";
     public const string StatuslineRegistered = "registered in ~/.claude/settings.json";
     public const string StatuslineMissing = "not registered in ~/.claude/settings.json";

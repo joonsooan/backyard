@@ -1,3 +1,4 @@
+using System.Text.Json;
 namespace Backyard.Tests;
 
 public sealed class StorageTests : IDisposable
@@ -15,12 +16,37 @@ public sealed class StorageTests : IDisposable
     }
 
     [Fact]
-    public void Load_ReturnsNull_AndBacksUp_WhenJsonCorrupt()
+    public void Load_Throws_AndKeepsCorruptCopy_WhenJsonCorruptAndNoBackup()
     {
         var storage = NewStorage();
         File.WriteAllText(storage.FilePath, "{not json");
-        Assert.Null(storage.Load());
-        Assert.True(File.Exists(storage.FilePath + ".bak"));
+        Assert.Throws<JsonException>(() => storage.Load());
+        Assert.True(File.Exists(storage.CorruptPath));
+        Assert.False(File.Exists(storage.BackupPath));
+    }
+
+    [Fact]
+    public void Load_FallsBackToBackup_WhenJsonCorrupt()
+    {
+        var storage = NewStorage();
+        storage.Save(new SavedState { Coins = 7, FirstRunAt = DateTimeOffset.UnixEpoch });
+        storage.Save(new SavedState { Coins = 8, FirstRunAt = DateTimeOffset.UnixEpoch });
+        File.WriteAllText(storage.FilePath, "");
+        var loaded = storage.Load();
+        Assert.NotNull(loaded);
+        Assert.Equal(7, loaded.Coins);
+        Assert.True(File.Exists(storage.CorruptPath));
+    }
+
+    [Fact]
+    public void Save_KeepsPreviousStateAsBackup()
+    {
+        var storage = NewStorage();
+        storage.Save(new SavedState { Coins = 1, FirstRunAt = DateTimeOffset.UnixEpoch });
+        Assert.False(File.Exists(storage.BackupPath));
+        storage.Save(new SavedState { Coins = 2, FirstRunAt = DateTimeOffset.UnixEpoch });
+        Assert.Equal(2, storage.Load()!.Coins);
+        Assert.Contains("\"coins\":1", File.ReadAllText(storage.BackupPath));
     }
 
     [Fact]
