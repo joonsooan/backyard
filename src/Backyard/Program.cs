@@ -25,6 +25,8 @@ public static class Program
                     Console.WriteLine("! error");
                 }
                 return 0;
+            case "install":
+                return RunInstall();
             case "open":
                 return RunOpen();
             case "register":
@@ -33,7 +35,7 @@ public static class Program
                 return RunReset();
             case "disable":
                 Console.WriteLine("backyard runs only when your statusline calls it.");
-                Console.WriteLine("remove the 'backyard status' command from ~/.claude/settings.json (statusLine) to disable.");
+                Console.WriteLine(InstallText.DisableHint);
                 Console.WriteLine("your farm state is kept; re-add the statusline to resume.");
                 return 0;
             case "uninstall":
@@ -110,15 +112,88 @@ public static class Program
         return 0;
     }
 
+    private static int RunInstall()
+    {
+        var path = ClaudeSettingsFile.DefaultPath;
+        try
+        {
+            var original = File.Exists(path) ? File.ReadAllText(path) : "";
+            var updated = ClaudeSettingsFile.AddStatusline(original);
+            if (ReferenceEquals(updated, original))
+                Console.WriteLine(InstallText.AlreadyInstalled);
+            else
+            {
+                WriteSettings(path, original, updated);
+                Console.WriteLine(InstallText.Registered);
+            }
+        }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+        {
+            Console.WriteLine(string.Format(InstallText.UpdateFailed, path, e.Message));
+            return 1;
+        }
+
+        if (OperatingSystem.IsWindows() && !IsLinkRegistered())
+        {
+            try
+            {
+                RunRegister();
+            }
+            catch (Exception)
+            {
+                Console.WriteLine(InstallText.LinkFailed);
+            }
+        }
+        Console.WriteLine(InstallText.Done);
+        return 0;
+    }
+
+    private static void WriteSettings(string path, string original, string updated)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        if (File.Exists(path))
+            File.Copy(path, path + ".bak", overwrite: true);
+        var tmp = $"{path}.{Environment.ProcessId}.tmp";
+        File.WriteAllText(tmp, updated);
+        File.Move(tmp, path, overwrite: true);
+    }
+
+    private static bool IsLinkRegistered()
+    {
+        if (!OperatingSystem.IsWindows())
+            return false;
+        using var cmd = Registry.CurrentUser.OpenSubKey(@"Software\Classes\backyard\shell\open\command");
+        var exe = Environment.ProcessPath;
+        return exe is not null && cmd?.GetValue("") is string value && value.Contains(exe, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static int RunUninstall()
     {
+        var settingsPath = ClaudeSettingsFile.DefaultPath;
+        try
+        {
+            if (File.Exists(settingsPath))
+            {
+                var original = File.ReadAllText(settingsPath);
+                var updated = ClaudeSettingsFile.RemoveStatusline(original);
+                if (!ReferenceEquals(updated, original))
+                {
+                    WriteSettings(settingsPath, original, updated);
+                    Console.WriteLine(InstallText.Removed);
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+        {
+            Console.WriteLine(string.Format(InstallText.UpdateFailed, settingsPath, e.Message));
+        }
         var dir = Path.GetDirectoryName(Storage.DefaultPath)!;
         if (Directory.Exists(dir))
             Directory.Delete(dir, recursive: true);
         if (OperatingSystem.IsWindows())
             Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\backyard", throwOnMissingSubKey: false);
         Console.WriteLine($"removed {dir}");
-        Console.WriteLine("to finish: remove 'backyard status' from your statusline settings, then delete the backyard binary.");
+        Console.WriteLine(InstallText.UninstallDone);
         return 0;
     }
 
@@ -181,10 +256,9 @@ public static class Program
 
     private static bool IsStatuslineRegistered()
     {
-        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "settings.json");
         try
         {
-            var settings = JsonSerializer.Deserialize(File.ReadAllText(path), BackyardJson.Default.ClaudeSettings);
+            var settings = JsonSerializer.Deserialize(File.ReadAllText(ClaudeSettingsFile.DefaultPath), BackyardJson.Default.ClaudeSettings);
             var command = settings?.StatusLine?.Command?.Trim();
             return command is not null && command.Contains("backyard") && command.EndsWith("status");
         }
@@ -289,6 +363,18 @@ public static class Program
         storage.Save(saved);
         return saved;
     }
+}
+
+public static class InstallText
+{
+    public const string AlreadyInstalled = "already installed";
+    public const string Registered = "statusline registered";
+    public const string Removed = "statusline removed";
+    public const string LinkFailed = "link registration failed; ctrl+click will not work. run `backyard register` later.";
+    public const string Done = "start a new Claude Code session to see your farm.";
+    public const string UpdateFailed = "could not update {0}: {1}";
+    public const string UninstallDone = "to finish: dotnet tool uninstall -g backyard-farm";
+    public const string DisableHint = "run `backyard uninstall`, or remove 'backyard status' from ~/.claude/settings.json (statusLine).";
 }
 
 public static class DoctorText
