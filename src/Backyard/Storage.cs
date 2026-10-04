@@ -119,14 +119,13 @@ public partial class BackyardJson : JsonSerializerContext;
 
 public static class ClaudeSettingsFile
 {
-    public const string Command = "backyard status";
-    private const string ChainSuffix = " && " + Command;
+    public static string CommandFor(string? exe) => exe is null ? "backyard status" : $"\"{exe}\" status";
     private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     public static string DefaultPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "settings.json");
 
-    public static string AddStatusline(string json)
+    public static string AddStatusline(string json, string command)
     {
         var root = Parse(json);
         if (root["statusLine"] is not JsonObject statusLine)
@@ -134,7 +133,7 @@ public static class ClaudeSettingsFile
             root["statusLine"] = new JsonObject
             {
                 ["type"] = "command",
-                ["command"] = Command,
+                ["command"] = command,
                 ["refreshInterval"] = 1,
             };
             return root.ToJsonString(Indented);
@@ -143,31 +142,32 @@ public static class ClaudeSettingsFile
         var existing = statusLine["command"]?.GetValue<string>()?.Trim();
         if (string.IsNullOrEmpty(existing))
         {
-            statusLine["command"] = Command;
+            statusLine["command"] = command;
             statusLine["type"] ??= "command";
             return root.ToJsonString(Indented);
         }
-        if (existing.Contains(Command))
+        if (existing.Contains(command) || existing.Contains("backyard status"))
             return json;
 
-        statusLine["command"] = existing + ChainSuffix;
+        statusLine["command"] = existing + " && " + command;
         return root.ToJsonString(Indented);
     }
 
-    public static string RemoveStatusline(string json)
+    public static string RemoveStatusline(string json, string command)
     {
+        var chainSuffix = " && " + command;
         var root = Parse(json);
         if (root["statusLine"] is not JsonObject statusLine)
             return json;
         var existing = statusLine["command"]?.GetValue<string>()?.Trim();
-        if (existing == Command)
+        if (existing == command)
         {
             root.Remove("statusLine");
             return root.ToJsonString(Indented);
         }
-        if (existing is not null && existing.EndsWith(ChainSuffix))
+        if (existing is not null && existing.EndsWith(chainSuffix))
         {
-            statusLine["command"] = existing[..^ChainSuffix.Length];
+            statusLine["command"] = existing[..^chainSuffix.Length];
             return root.ToJsonString(Indented);
         }
         return json;

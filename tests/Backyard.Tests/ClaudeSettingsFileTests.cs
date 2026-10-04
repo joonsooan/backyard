@@ -4,6 +4,7 @@ namespace Backyard.Tests;
 
 public sealed class ClaudeSettingsFileTests
 {
+    private const string Cmd = "backyard status";
     private const string Other = """{"model":"opus","statusLine":{"type":"command","command":"my-status.sh","refreshInterval":2}}""";
 
     private static JsonObject StatusLine(string json) => (JsonObject)JsonNode.Parse(json)!["statusLine"]!;
@@ -11,7 +12,7 @@ public sealed class ClaudeSettingsFileTests
     [Fact]
     public void Add_CreatesStatusLine_WhenMissing()
     {
-        var statusLine = StatusLine(ClaudeSettingsFile.AddStatusline("{}"));
+        var statusLine = StatusLine(ClaudeSettingsFile.AddStatusline("{}", Cmd));
         Assert.Equal("command", (string?)statusLine["type"]);
         Assert.Equal("backyard status", (string?)statusLine["command"]);
         Assert.Equal(1, (int?)statusLine["refreshInterval"]);
@@ -20,7 +21,7 @@ public sealed class ClaudeSettingsFileTests
     [Fact]
     public void Add_ChainsAfterExistingCommand_PreservingOtherKeys()
     {
-        var result = ClaudeSettingsFile.AddStatusline(Other);
+        var result = ClaudeSettingsFile.AddStatusline(Other, Cmd);
         var root = JsonNode.Parse(result)!;
         Assert.Equal("opus", (string?)root["model"]);
         Assert.Equal("my-status.sh && backyard status", (string?)root["statusLine"]!["command"]);
@@ -30,20 +31,20 @@ public sealed class ClaudeSettingsFileTests
     [Fact]
     public void Add_ReturnsSameReference_WhenAlreadyPresent()
     {
-        var input = ClaudeSettingsFile.AddStatusline(Other);
-        Assert.Same(input, ClaudeSettingsFile.AddStatusline(input));
+        var input = ClaudeSettingsFile.AddStatusline(Other, Cmd);
+        Assert.Same(input, ClaudeSettingsFile.AddStatusline(input, Cmd));
     }
 
     [Fact]
     public void Add_TreatsEmptyInputAsEmptyObject()
     {
-        Assert.Equal(ClaudeSettingsFile.AddStatusline("{}"), ClaudeSettingsFile.AddStatusline(""));
+        Assert.Equal(ClaudeSettingsFile.AddStatusline("{}", Cmd), ClaudeSettingsFile.AddStatusline("", Cmd));
     }
 
     [Fact]
     public void Remove_RestoresOriginalCommand()
     {
-        var root = JsonNode.Parse(ClaudeSettingsFile.RemoveStatusline(ClaudeSettingsFile.AddStatusline(Other)))!;
+        var root = JsonNode.Parse(ClaudeSettingsFile.RemoveStatusline(ClaudeSettingsFile.AddStatusline(Other, Cmd), Cmd))!;
         Assert.Equal("my-status.sh", (string?)root["statusLine"]!["command"]);
         Assert.Equal("opus", (string?)root["model"]);
     }
@@ -51,7 +52,7 @@ public sealed class ClaudeSettingsFileTests
     [Fact]
     public void Remove_DeletesStatusLine_WhenOnlyBackyard()
     {
-        var root = (JsonObject)JsonNode.Parse(ClaudeSettingsFile.RemoveStatusline(ClaudeSettingsFile.AddStatusline("{}")))!;
+        var root = (JsonObject)JsonNode.Parse(ClaudeSettingsFile.RemoveStatusline(ClaudeSettingsFile.AddStatusline("{}", Cmd), Cmd))!;
         Assert.False(root.ContainsKey("statusLine"));
     }
 
@@ -59,6 +60,6 @@ public sealed class ClaudeSettingsFileTests
     public void Remove_ReturnsSameReference_WhenNoStatusLine()
     {
         const string input = """{"model":"opus"}""";
-        Assert.Same(input, ClaudeSettingsFile.RemoveStatusline(input));
+        Assert.Same(input, ClaudeSettingsFile.RemoveStatusline(input, Cmd));
     }
 }

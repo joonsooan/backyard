@@ -118,7 +118,7 @@ public static class Program
         try
         {
             var original = File.Exists(path) ? File.ReadAllText(path) : "";
-            var updated = ClaudeSettingsFile.AddStatusline(original);
+            var updated = ClaudeSettingsFile.AddStatusline(original, ClaudeSettingsFile.CommandFor(Environment.ProcessPath));
             if (ReferenceEquals(updated, original))
                 Console.WriteLine(InstallText.AlreadyInstalled);
             else
@@ -175,7 +175,7 @@ public static class Program
             if (File.Exists(settingsPath))
             {
                 var original = File.ReadAllText(settingsPath);
-                var updated = ClaudeSettingsFile.RemoveStatusline(original);
+                var updated = ClaudeSettingsFile.RemoveStatusline(original, ClaudeSettingsFile.CommandFor(Environment.ProcessPath));
                 if (!ReferenceEquals(updated, original))
                 {
                     WriteSettings(settingsPath, original, updated);
