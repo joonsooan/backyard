@@ -10,6 +10,14 @@
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>backyard</ToolCommandName>
+    <PackageId>backyard-farm</PackageId>
+    <Version>0.1.0</Version>
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/joonsooan/backyard</PackageProjectUrl>
+    <Description>A terminal farm that quietly grows each time Claude Code finishes a task. Shown in your statusline.</Description>
   </PropertyGroup>
 
   <ItemGroup>
