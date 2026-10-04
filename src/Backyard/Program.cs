@@ -260,7 +260,7 @@ public static class Program
         {
             var settings = JsonSerializer.Deserialize(File.ReadAllText(ClaudeSettingsFile.DefaultPath), BackyardJson.Default.ClaudeSettings);
             var command = settings?.StatusLine?.Command?.Trim();
-            return command is not null && command.Contains("backyard") && command.EndsWith("status");
+            return command is not null && command.Split(" && ").Any(ClaudeSettingsFile.IsBackyardStatus);
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {

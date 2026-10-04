@@ -62,4 +62,12 @@ public sealed class ClaudeSettingsFileTests
         const string input = """{"model":"opus"}""";
         Assert.Same(input, ClaudeSettingsFile.RemoveStatusline(input, Cmd));
     }
+
+    [Fact]
+    public void Add_ReplacesStaleBackyardSegment_AfterToolUpdate()
+    {
+        const string old = """{"statusLine":{"type":"command","command":"my-status.sh && \"C:/old/backyard.exe\" status"}}""";
+        var result = ClaudeSettingsFile.AddStatusline(old, "\"C:/new/backyard.exe\" status");
+        Assert.Equal("my-status.sh && \"C:/new/backyard.exe\" status", (string?)StatusLine(result)["command"]);
+    }
 }

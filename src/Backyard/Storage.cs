@@ -139,39 +139,44 @@ public static class ClaudeSettingsFile
             return root.ToJsonString(Indented);
         }
 
-        var existing = statusLine["command"]?.GetValue<string>()?.Trim();
-        if (string.IsNullOrEmpty(existing))
-        {
-            statusLine["command"] = command;
-            statusLine["type"] ??= "command";
-            return root.ToJsonString(Indented);
-        }
-        if (existing.Contains(command) || existing.Contains("backyard status"))
+        var existing = statusLine["command"]?.GetValue<string>()?.Trim() ?? "";
+        var others = OtherSegments(existing);
+        var merged = string.Join(" && ", others.Append(command));
+        if (merged == existing)
             return json;
-
-        statusLine["command"] = existing + " && " + command;
+        statusLine["command"] = merged;
+        statusLine["type"] ??= "command";
         return root.ToJsonString(Indented);
     }
 
     public static string RemoveStatusline(string json, string command)
     {
-        var chainSuffix = " && " + command;
         var root = Parse(json);
         if (root["statusLine"] is not JsonObject statusLine)
             return json;
-        var existing = statusLine["command"]?.GetValue<string>()?.Trim();
-        if (existing == command)
+        var existing = statusLine["command"]?.GetValue<string>()?.Trim() ?? "";
+        var others = OtherSegments(existing);
+        if (others.Count == 0)
         {
+            if (existing.Length == 0)
+                return json;
             root.Remove("statusLine");
             return root.ToJsonString(Indented);
         }
-        if (existing is not null && existing.EndsWith(chainSuffix))
-        {
-            statusLine["command"] = existing[..^chainSuffix.Length];
-            return root.ToJsonString(Indented);
-        }
-        return json;
+        var merged = string.Join(" && ", others);
+        if (merged == existing)
+            return json;
+        statusLine["command"] = merged;
+        return root.ToJsonString(Indented);
     }
+
+    private static List<string> OtherSegments(string existing) =>
+        existing.Split(" && ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(segment => !IsBackyardStatus(segment))
+            .ToList();
+
+    public static bool IsBackyardStatus(string segment) =>
+        segment.Contains("backyard", StringComparison.OrdinalIgnoreCase) && segment.EndsWith(" status");
 
     private static JsonObject Parse(string json) =>
         string.IsNullOrWhiteSpace(json) ? new JsonObject() : JsonNode.Parse(json) as JsonObject ?? new JsonObject();
