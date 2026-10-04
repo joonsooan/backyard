@@ -13,7 +13,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>backyard</ToolCommandName>
     <PackageId>backyard-farm</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/joonsooan/backyard</PackageProjectUrl>
