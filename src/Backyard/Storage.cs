@@ -120,6 +120,18 @@ public partial class BackyardJson : JsonSerializerContext;
 public static class ClaudeSettingsFile
 {
     public static string CommandFor(string? exe) => exe is null ? "backyard status" : $"\"{exe}\" status";
+
+    public static string? StableExePath(string? processPath)
+    {
+        if (processPath is null)
+            return null;
+        var marker = Path.Combine(".dotnet", "tools", ".store") + Path.DirectorySeparatorChar;
+        var i = processPath.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (i < 0)
+            return processPath;
+        var toolsDir = processPath[..(i + marker.Length - ".store".Length - 1)];
+        return Path.Combine(toolsDir, OperatingSystem.IsWindows() ? "backyard.cmd" : "backyard");
+    }
     private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     public static string DefaultPath =>

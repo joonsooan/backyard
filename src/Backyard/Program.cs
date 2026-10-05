@@ -70,7 +70,7 @@ public static class Program
                 return 0;
             }
         }
-        var exe = Environment.ProcessPath ?? "backyard";
+        var exe = ClaudeSettingsFile.StableExePath(Environment.ProcessPath) ?? "backyard";
         try
         {
             Process.Start(new ProcessStartInfo("wt")
@@ -92,7 +92,7 @@ public static class Program
             Console.WriteLine("register is windows-only. on other platforms the statusline link needs no setup if your terminal maps backyard:// yourself.");
             return 1;
         }
-        var exe = Environment.ProcessPath ?? "backyard";
+        var exe = ClaudeSettingsFile.StableExePath(Environment.ProcessPath) ?? "backyard";
         using var key = Registry.CurrentUser.CreateSubKey(@"Software\Classes\backyard");
         key.SetValue("", "URL:backyard");
         key.SetValue("URL Protocol", "");
@@ -118,7 +118,7 @@ public static class Program
         try
         {
             var original = File.Exists(path) ? File.ReadAllText(path) : "";
-            var updated = ClaudeSettingsFile.AddStatusline(original, ClaudeSettingsFile.CommandFor(Environment.ProcessPath));
+            var updated = ClaudeSettingsFile.AddStatusline(original, ClaudeSettingsFile.CommandFor(ClaudeSettingsFile.StableExePath(Environment.ProcessPath)));
             if (ReferenceEquals(updated, original))
                 Console.WriteLine(InstallText.AlreadyInstalled);
             else
@@ -163,7 +163,7 @@ public static class Program
         if (!OperatingSystem.IsWindows())
             return false;
         using var cmd = Registry.CurrentUser.OpenSubKey(@"Software\Classes\backyard\shell\open\command");
-        var exe = Environment.ProcessPath;
+        var exe = ClaudeSettingsFile.StableExePath(Environment.ProcessPath);
         return exe is not null && cmd?.GetValue("") is string value && value.Contains(exe, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -175,7 +175,7 @@ public static class Program
             if (File.Exists(settingsPath))
             {
                 var original = File.ReadAllText(settingsPath);
-                var updated = ClaudeSettingsFile.RemoveStatusline(original, ClaudeSettingsFile.CommandFor(Environment.ProcessPath));
+                var updated = ClaudeSettingsFile.RemoveStatusline(original, ClaudeSettingsFile.CommandFor(ClaudeSettingsFile.StableExePath(Environment.ProcessPath)));
                 if (!ReferenceEquals(updated, original))
                 {
                     WriteSettings(settingsPath, original, updated);
