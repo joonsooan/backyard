@@ -192,4 +192,60 @@ public class WatcherTests : IDisposable
         File.AppendAllLines(path, File.ReadAllLines(Fixture("session-tool-turn.jsonl")));
         Assert.Empty(watcher.ReadFile(path));
     }
+
+    private static readonly DateTimeOffset TurnStart = DateTimeOffset.Parse("2026-10-02T13:45:29.224Z");
+
+    [Fact]
+    public void WorkingSessions_IncludesOpenTurn_WithinWindow()
+    {
+        var lines = File.ReadAllLines(Fixture("session-tool-turn.jsonl"));
+        var path = Path.Combine(_tempDir, "session-open.jsonl");
+        File.WriteAllLines(path, lines[..3]);
+
+        var watcher = new Watcher();
+        watcher.ReadFile(path);
+
+        Assert.Equal(["session-open"], watcher.WorkingSessions(TurnStart.AddMinutes(1)));
+    }
+
+    [Fact]
+    public void WorkingSessions_ExcludesCompletedTurn()
+    {
+        var watcher = new Watcher();
+        watcher.ReadFile(Fixture("session-tool-turn.jsonl"));
+
+        Assert.Empty(watcher.WorkingSessions(TurnStart.AddMinutes(1)));
+    }
+
+    [Fact]
+    public void WorkingSessions_ExcludesOpenTurn_AfterWindow()
+    {
+        var lines = File.ReadAllLines(Fixture("session-tool-turn.jsonl"));
+        var path = Path.Combine(_tempDir, "session-open.jsonl");
+        File.WriteAllLines(path, lines[..3]);
+
+        var watcher = new Watcher();
+        watcher.ReadFile(path);
+
+        Assert.Empty(watcher.WorkingSessions(TurnStart.AddMinutes(10)));
+    }
+
+    [Fact]
+    public void WorkingSessions_IncrementalRead_StopsWorkingWhenTurnEnds()
+    {
+        var projectDir = MakeProjectDir();
+        var lines = File.ReadAllLines(Fixture("session-tool-turn.jsonl"));
+        var path = Path.Combine(projectDir, "session-open.jsonl");
+        File.WriteAllLines(path, lines[..3]);
+
+        var cursors = new Dictionary<string, WatcherCursor>();
+        var first = new Watcher(cursors);
+        first.Scan(_tempDir);
+        Assert.Equal(["session-open"], first.WorkingSessions(TurnStart.AddMinutes(1)));
+
+        File.AppendAllLines(path, lines[3..]);
+        var second = new Watcher(cursors);
+        second.Scan(_tempDir);
+        Assert.Empty(second.WorkingSessions(TurnStart.AddMinutes(1)));
+    }
 }

@@ -355,6 +355,7 @@ public static class Program
             events = watcher.Scan(ProjectsRoot);
 
         saved.Apply(events, now);
+        saved.WorkingSessions = watcher.WorkingSessions(now);
 
         saved.Diag.ParseErrors += watcher.ParseErrorCount;
         saved.Diag.UnknownLines += watcher.UnknownLineCount;

@@ -19,6 +19,7 @@ public sealed class SavedState : FarmState
     public int Version { get; set; } = CurrentVersion;
     public Dictionary<string, WatcherCursor> WatcherCursors { get; set; } = [];
     public Diagnostics Diag { get; set; } = new();
+    [JsonIgnore] public IReadOnlyList<string> WorkingSessions { get; set; } = [];
 }
 
 public sealed class Diagnostics

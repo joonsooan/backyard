@@ -9,6 +9,7 @@ public static class Balance
     public const int SecondRowPrice = 50;
     public const int ThirdRowPrice = 150;
     public const int UnlockMultiplier = 10;
+    public const int WorkingWindowMinutes = 3;
     public static readonly int[] FlavorThresholds = [5, 10, 20];
 
     public static readonly Dictionary<string, string[]> Flavor = new()

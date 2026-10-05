@@ -31,6 +31,7 @@ public sealed class WatcherCursor
     public long Offset { get; set; }
     public string? TurnId { get; set; }
     public string? SessionId { get; set; }
+    public DateTimeOffset? LastRecordAt { get; set; }
     public Dictionary<string, int> ToolCounts { get; set; } = new();
 }
 
@@ -48,6 +49,16 @@ public sealed class Watcher(Dictionary<string, WatcherCursor>? cursors = null)
     public int ParseErrorCount { get; private set; }
     public int UnknownLineCount { get; private set; }
     public DateTimeOffset? LastEventTimestamp { get; private set; }
+
+    public IReadOnlyList<string> WorkingSessions(DateTimeOffset now)
+    {
+        var window = TimeSpan.FromMinutes(Balance.WorkingWindowMinutes);
+        return _cursors
+            .Where(c => c.Value.TurnId != null && c.Value.LastRecordAt is { } at && now - at < window)
+            .Select(c => c.Key)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+    }
 
     public List<WatchEvent> Scan(string projectsRoot)
     {
@@ -85,6 +96,7 @@ public sealed class Watcher(Dictionary<string, WatcherCursor>? cursors = null)
         {
             cursor.Offset = 0;
             cursor.TurnId = null;
+            cursor.LastRecordAt = null;
             cursor.ToolCounts = new();
         }
         if (stream.Length == cursor.Offset)
@@ -125,6 +137,8 @@ public sealed class Watcher(Dictionary<string, WatcherCursor>? cursors = null)
             ParseErrorCount++;
             return;
         }
+        if (TryParseTimestamp(record.Timestamp, out var recordAt))
+            cursor.LastRecordAt = recordAt;
         if (record.IsSidechain == true)
             return;
 
@@ -190,10 +204,13 @@ public sealed class Watcher(Dictionary<string, WatcherCursor>? cursors = null)
             return;
         if (!_seenTurns.Add($"{sessionId}|{turnId}"))
             return;
-        if (!DateTimeOffset.TryParse(record.Timestamp, null, System.Globalization.DateTimeStyles.RoundtripKind, out var timestamp))
+        if (!TryParseTimestamp(record.Timestamp, out var timestamp))
             return;
 
         LastEventTimestamp = timestamp;
         events.Add(new WatchEvent(sessionId, turnId, timestamp, toolCounts));
     }
+
+    private static bool TryParseTimestamp(string? text, out DateTimeOffset timestamp) =>
+        DateTimeOffset.TryParse(text, null, System.Globalization.DateTimeStyles.RoundtripKind, out timestamp);
 }

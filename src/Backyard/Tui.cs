@@ -61,6 +61,14 @@ public static class TuiText
     public const char SproutGlyph = ',';
     public const char GrowingGlyph = 'v';
     public const char ReadyGlyph = 'Y';
+
+    public const string FarmerGlyph = "o/";
+    public const int MaxFarmers = 3;
+    public const int FarmerMoveMinSeconds = 3;
+    public const int FarmerMoveMaxSeconds = 8;
+    public const string WorkingLabel = "working";
+    public const int WorkingFrameWidth = 10;
+    public static readonly int[] WorkingDots = [3, 2, 1, 0, 1, 2];
 }
 
 public static class TuiColors
@@ -72,6 +80,14 @@ public static class TuiColors
     public const string Growing = "bold green";
     public const string Empty = "dim grey";
     public const string SelectedBorder = "bold white";
+    public static readonly string[] FarmerColors = ["white", "blue", "magenta"];
+}
+
+public sealed class Farmer
+{
+    public int X;
+    public int Direction = 1;
+    public DateTimeOffset NextMoveAt;
 }
 
 // Rendering and key handling only.
@@ -140,6 +156,7 @@ public static partial class Tui
         var gardenMessage = "";
         var screen = TuiScreen.Main;
         var quit = false;
+        var farmers = new Dictionary<string, Farmer>();
 
         AnsiConsole.AlternateScreen(() =>
         {
@@ -147,7 +164,8 @@ public static partial class Tui
             try
             {
                 farm.Settle(DateTimeOffset.Now);
-                AnsiConsole.Live(View(farm, selected, shopSelected, codexSelected, shopMessage, gardenMessage, screen)).Start(ctx =>
+                UpdateFarmers(farmers, farm, DateTimeOffset.Now);
+                AnsiConsole.Live(View(farm, farmers, selected, shopSelected, codexSelected, shopMessage, gardenMessage, screen)).Start(ctx =>
                 {
                     ctx.Refresh();
                     var lastSize = (Console.WindowWidth, Console.WindowHeight);
@@ -258,7 +276,8 @@ public static partial class Tui
                             }
                         }
                         farm.Settle(DateTimeOffset.Now);
-                        ctx.UpdateTarget(View(farm, selected, shopSelected, codexSelected, shopMessage, gardenMessage, screen));
+                        UpdateFarmers(farmers, farm, DateTimeOffset.Now);
+                        ctx.UpdateTarget(View(farm, farmers, selected, shopSelected, codexSelected, shopMessage, gardenMessage, screen));
                         var waited = 0;
                         while (!quit && !Console.KeyAvailable && waited < 200)
                         {
@@ -275,6 +294,66 @@ public static partial class Tui
         });
         save(farm);
         return 0;
+    }
+
+    private static int PathWidth => FieldWidth(Balance.Columns) - TuiText.FarmerGlyph.Length;
+
+    private static IReadOnlyList<string> WorkingSessions(FarmState farm) =>
+        (farm as SavedState)?.WorkingSessions ?? [];
+
+    private static void UpdateFarmers(Dictionary<string, Farmer> farmers, FarmState farm, DateTimeOffset now)
+    {
+        var keys = WorkingSessions(farm).Take(TuiText.MaxFarmers).ToList();
+        foreach (var gone in farmers.Keys.Where(k => !keys.Contains(k)).ToList())
+            farmers.Remove(gone);
+        bool Occupied(int x) => farmers.Values.Any(f => f.X == x);
+        foreach (var key in keys)
+        {
+            if (farmers.ContainsKey(key))
+                continue;
+            var x = Random.Shared.Next(PathWidth + 1);
+            for (var tries = 0; tries < PathWidth && Occupied(x); tries++)
+                x = Random.Shared.Next(PathWidth + 1);
+            farmers[key] = new Farmer { X = x, Direction = Random.Shared.Next(2) == 0 ? -1 : 1, NextMoveAt = now };
+        }
+        foreach (var farmer in farmers.Values)
+        {
+            if (now < farmer.NextMoveAt)
+                continue;
+            var target = farmer.X + farmer.Direction * Random.Shared.Next(1, 3);
+            if (target < 0 || target > PathWidth)
+            {
+                farmer.Direction = -farmer.Direction;
+                target = Math.Clamp(target, 0, PathWidth);
+            }
+            if (!Occupied(target))
+                farmer.X = target;
+            farmer.NextMoveAt = now.AddSeconds(Random.Shared.Next(TuiText.FarmerMoveMinSeconds, TuiText.FarmerMoveMaxSeconds + 1));
+        }
+    }
+
+    private static string FarmerPathLine(Dictionary<string, Farmer> farmers, IReadOnlyList<string> keys)
+    {
+        var line = new string(' ', FieldWidth(Balance.Columns));
+        var parts = new List<string>();
+        var cursor = 0;
+        foreach (var (key, i) in keys.Take(TuiText.MaxFarmers).Select((k, i) => (k, i)).OrderBy(p => farmers.GetValueOrDefault(p.k)?.X ?? -1))
+        {
+            if (!farmers.TryGetValue(key, out var farmer) || farmer.X < cursor)
+                continue;
+            parts.Add(line[cursor..farmer.X]);
+            parts.Add($"[{TuiColors.FarmerColors[i]}]{TuiText.FarmerGlyph}[/]");
+            cursor = farmer.X + TuiText.FarmerGlyph.Length;
+        }
+        parts.Add(line[cursor..]);
+        return new string(' ', FieldSideMargin) + string.Concat(parts);
+    }
+
+    private static string WorkingFrame(DateTimeOffset now)
+    {
+        var left = TuiText.WorkingDots[now.ToUnixTimeSeconds() % TuiText.WorkingDots.Length];
+        var frame = new string('.', left) + TuiText.WorkingLabel + new string('.', TuiText.WorkingFrameWidth - TuiText.WorkingLabel.Length - left);
+        return $"[{TuiColors.Muted}]{frame} │ [/]";
     }
 
     // The garden shows all unlocked rows plus one locked preview row.
@@ -353,10 +432,10 @@ public static partial class Tui
         return views;
     }
 
-    private static Markup View(FarmState farm, int selected, int shopSelected, int codexSelected, string shopMessage, string gardenMessage, TuiScreen screen) =>
+    private static Markup View(FarmState farm, Dictionary<string, Farmer> farmers, int selected, int shopSelected, int codexSelected, string shopMessage, string gardenMessage, TuiScreen screen) =>
         WindowTooSmall()
             ? TooSmallView()
-            : Render(farm, selected, shopSelected, codexSelected, shopMessage, gardenMessage, screen);
+            : Render(farm, farmers, selected, shopSelected, codexSelected, shopMessage, gardenMessage, screen);
 
     private static Markup TooSmallView() => new(string.Join("\n",
         TuiText.TooSmallTitle,
@@ -368,7 +447,7 @@ public static partial class Tui
         TuiText.TooSmallQuitKey));
 
     // Frame layout: top border, body (screen-specific), separator, key hint line. Sizes follow the console window.
-    private static Markup Render(FarmState farm, int selected, int shopSelected, int codexSelected, string shopMessage, string gardenMessage, TuiScreen screen)
+    private static Markup Render(FarmState farm, Dictionary<string, Farmer> farmers, int selected, int shopSelected, int codexSelected, string shopMessage, string gardenMessage, TuiScreen screen)
     {
         var frameWidth = Math.Max(TuiText.MinWidth, Console.WindowWidth - 2);
         var frameHeight = Math.Max(TuiText.MinHeight - 1, Console.WindowHeight - 1);
@@ -380,7 +459,7 @@ public static partial class Tui
         {
             TuiScreen.Shop => (ShopBody(farm, inner, bodyHeight, shopSelected, shopMessage), TuiText.ShopKeysLine),
             TuiScreen.Codex => (CodexBody(farm, inner, bodyHeight, codexSelected), TuiText.CodexKeysLine),
-            _ => (MainBody(farm, cells, selected, gardenMessage, inner, bodyHeight), TuiText.MainKeysLine)
+            _ => (MainBody(farm, farmers, cells, selected, gardenMessage, inner, bodyHeight), TuiText.MainKeysLine)
         };
 
         var lines = new List<string> { TopBorder(screen, farm, frameWidth) };
@@ -415,12 +494,14 @@ public static partial class Tui
         var panelInner = Math.Max(1, panelWidth - 2);
         if (cell.Glyph == TuiText.EmptyGlyph)
         {
-            var empty = new List<string> { $" [{TuiColors.Muted}]{TuiText.EmptyLabel}[/]", "" };
+            var empty = new List<string> { $" [{TuiColors.Muted}]{TuiText.EmptyLabel}[/]" };
+            empty.AddRange(Wrap(TuiText.PlantHint, panelInner).Select(l => $" [{TuiColors.Muted}]{Markup.Escape(l)}[/]"));
+            empty.Add("");
             empty.AddRange(Balance.Crops
                 .Select((crop, i) => (crop, i))
                 .Where(x => !x.crop.Retired && farm.IsUnlocked(x.crop.Name))
                 .Select(x =>
-                    $" {x.i + 1} [{TuiColors.Muted}]{Markup.Escape(Trunc(x.crop.Name, panelInner - 8))}[/] [{TuiColors.Gold}]{x.crop.SeedPrice}G[/]"));
+                    $" [[{x.i + 1}]] [{TuiColors.Muted}]{Markup.Escape(Trunc(x.crop.Name, panelInner - 10))}[/] [{TuiColors.Gold}]{x.crop.SeedPrice}G[/]"));
             if (gardenMessage.Length > 0)
             {
                 empty.Add("");
@@ -596,7 +677,7 @@ public static partial class Tui
             i == (int)screen ? $"[bold]{name}[/]" : $"[{TuiColors.Muted}]{name}[/]"));
         var right = screen switch
         {
-            TuiScreen.Main => $"[{TuiColors.Muted}]{farm.Planted.Count()}/{farm.Cells.Length} planted │ [/][{TuiColors.Gold}]{farm.Coins}G[/]",
+            TuiScreen.Main => $"{(WorkingSessions(farm).Count > 0 ? WorkingFrame(DateTimeOffset.Now) : "")}[{TuiColors.Muted}]{farm.Planted.Count()}/{farm.Cells.Length} planted │ [/][{TuiColors.Gold}]{farm.Coins}G[/]",
             TuiScreen.Codex => $"[{TuiColors.Muted}]{farm.UnlockedCrops.Count}/{Balance.Crops.Length} discovered[/]",
             _ => $"[{TuiColors.Gold}]{farm.Coins}G[/]"
         };
