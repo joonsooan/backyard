@@ -74,8 +74,9 @@ public sealed class ClaudeSettingsFileTests
     [Fact]
     public void StableExePath_ReplacesStoreVersionDir_WithToolsShim()
     {
-        var store = @"C:\Users\me\.dotnet\tools\.store\backyard-farm\0.2.1\backyard-farm.win-x64\0.2.1\tools\any\win-x64\backyard.exe";
-        var expected = Path.Combine(@"C:\Users\me\.dotnet\tools", OperatingSystem.IsWindows() ? "backyard.cmd" : "backyard");
+        var toolsDir = Path.Combine(Path.GetTempPath(), ".dotnet", "tools");
+        var store = Path.Combine(toolsDir, ".store", "backyard-farm", "0.2.1", "backyard-farm.win-x64", "0.2.1", "tools", "any", "win-x64", "backyard.exe");
+        var expected = Path.Combine(toolsDir, OperatingSystem.IsWindows() ? "backyard.cmd" : "backyard");
         Assert.Equal(expected, ClaudeSettingsFile.StableExePath(store));
     }
 
