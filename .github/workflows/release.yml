@@ -35,6 +35,16 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
 
+      - name: Check tag matches csproj Version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          csproj=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' src/Backyard/Backyard.csproj)
+          if [ "v$csproj" != "${{ github.ref_name }}" ]; then
+            echo "csproj Version $csproj != tag ${{ github.ref_name }}"
+            exit 1
+          fi
+
       - name: Test
         run: dotnet test -c Release
 
