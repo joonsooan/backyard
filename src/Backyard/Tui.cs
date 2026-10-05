@@ -18,6 +18,7 @@ public static class TuiText
 {
     public const int MinWidth = 100;
     public const int MinHeight = 20;
+    public const string AlreadyRunning = "backyard is already open in another window.";
     public const int ResizeWidth = 100;
     public const int ResizeHeight = 30;
     public const string TooSmallTitle = "[bold]backyard[/]";

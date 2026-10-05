@@ -58,17 +58,23 @@ public static class Program
 
     private const int SwRestore = 9;
 
+    private const string TuiMutexName = "backyard-tui";
+
     private static int RunOpen()
     {
-        if (OperatingSystem.IsWindows())
+        if (Mutex.TryOpenExisting(TuiMutexName, out var running))
         {
-            var hwnd = FindWindowW(null, Tui.WindowTitle);
-            if (hwnd != IntPtr.Zero)
+            running.Dispose();
+            if (OperatingSystem.IsWindows())
             {
-                ShowWindow(hwnd, SwRestore);
-                SetForegroundWindow(hwnd);
-                return 0;
+                var hwnd = FindWindowW(null, Tui.WindowTitle);
+                if (hwnd != IntPtr.Zero)
+                {
+                    ShowWindow(hwnd, SwRestore);
+                    SetForegroundWindow(hwnd);
+                }
             }
+            return 0;
         }
         var exe = ClaudeSettingsFile.StableExePath(Environment.ProcessPath) ?? "backyard";
         try
@@ -280,6 +286,12 @@ public static class Program
 
     private static int RunTui()
     {
+        using var tuiMutex = new Mutex(true, TuiMutexName, out var first);
+        if (!first)
+        {
+            Console.WriteLine(TuiText.AlreadyRunning);
+            return 0;
+        }
         var farm = WithStateLock(() => SyncFarm(DateTimeOffset.Now));
         return Tui.Run(farm,
             save: f =>
