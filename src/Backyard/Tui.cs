@@ -29,9 +29,9 @@ public static class TuiText
     public const string MainKeysLine =
         $" wasd[{TuiColors.Muted}] move │ [/]f[{TuiColors.Muted}] harvest │ [/]x[{TuiColors.Muted}] remove │ [/]tab[{TuiColors.Muted}] next │ [/]r[{TuiColors.Muted}] resize │ [/]esc[{TuiColors.Muted}] quit[/]";
     public const string ShopKeysLine =
-        $" space[{TuiColors.Muted}] buy │ [/]tab[{TuiColors.Muted}] next │ [/]esc[{TuiColors.Muted}] quit[/]";
+        $" space[{TuiColors.Muted}] buy │ [/]tab[{TuiColors.Muted}] next │ [/]r[{TuiColors.Muted}] resize │ [/]esc[{TuiColors.Muted}] quit[/]";
     public const string CodexKeysLine =
-        $" up/down[{TuiColors.Muted}] select │ [/]tab[{TuiColors.Muted}] next │ [/]esc[{TuiColors.Muted}] quit[/]";
+        $" up/down[{TuiColors.Muted}] select │ [/]tab[{TuiColors.Muted}] next │ [/]r[{TuiColors.Muted}] resize │ [/]esc[{TuiColors.Muted}] quit[/]";
     public const string UnlockItemName = "{0} seeds";
     public const string UnlockItemDesc = "unlocks {0}";
     public const string UnlockGrowTime = "grow time  {0}m x {1}";
@@ -41,6 +41,7 @@ public static class TuiText
     public const string FlavorLocked = "??? (harvest {0} times to read)";
     public const string FlavorTitle = "interesting facts │ {0}";
     public const string EmptyLabel = "empty";
+    public const string PlantHint = "press a number to plant";
     public const string LockedLabel = "locked";
     public const string LockedHint = "buy extra row in shop";
     public const string NotEnoughGold = "not enough gold";
@@ -395,12 +396,13 @@ public static partial class Tui
 
     private const int FieldSideMargin = 3;
 
-    private static List<string> MainBody(FarmState farm, TuiCell[] cells, int selected, string gardenMessage, int inner, int bodyHeight)
+    private static List<string> MainBody(FarmState farm, Dictionary<string, Farmer> farmers, TuiCell[] cells, int selected, string gardenMessage, int inner, int bodyHeight)
     {
         var leftWidth = FieldWidth(Balance.Columns) + FieldSideMargin * 2;
         var panelWidth = Math.Max(3, inner - leftWidth - 1);
         var left = FieldLines(cells, selected).ToList();
         left.Insert(0, "");
+        left.Add(FarmerPathLine(farmers, WorkingSessions(farm)));
         var panel = InfoPanel(farm, cells[selected], gardenMessage, panelWidth);
         panel.Insert(0, "");
         return Columns(left, panel, leftWidth, inner, bodyHeight);
